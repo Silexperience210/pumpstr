@@ -62,7 +62,9 @@ Pumpstr/
   - `BOLTZ_NETWORK` ∈ `{ bitcoin, mutinynet, regtest }`.
 - **React Native** : SDK 100 % JS (noble/scure), **0 WASM / 0 binaire natif**, adapters Expo fournis
   (`@arkade-os/sdk/adapters/asyncStorage`, `/repositories/sqlite`), peerDep **`expo>=54`**.
-  En **Node**, le SDK défaute sur IndexedDB (navigateur) → polyfiller avec `fake-indexeddb/auto`.
+  En **Node**, le SDK attend deux globals navigateur → polyfiller : **IndexedDB** (`fake-indexeddb/auto`,
+  pour le stockage) **et `EventSource`** (paquet `eventsource`, pour la subscription temps réel SSE du
+  watcher de contrats — sinon spam `ReferenceError: EventSource is not defined`). En RN : `./adapters/asyncStorage` + `react-native-sse`.
 - **Node 22 LTS** requis (engine `>=22.12 <25`). `Wallet.create` ouvre une **souscription WebSocket**
   qui garde le process vivant (→ `process.exit()` dans un script ; comportement voulu dans un serveur).
 

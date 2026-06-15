@@ -9,8 +9,9 @@
     "dev": "tsx watch server.ts"
   },
   "dependencies": {
-    "@arkade-os/sdk": "latest",
     "@arkade-os/boltz-swap": "latest",
+    "@arkade-os/sdk": "latest",
+    "eventsource": "^4.1.0",
     "fake-indexeddb": "^6.2.5",
     "ws": "^8.18.0"
   },

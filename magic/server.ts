@@ -13,6 +13,8 @@
  * Run : npm start   (Node 22 LTS, réseau réel requis pour l'opérateur)
  */
 import "fake-indexeddb/auto"; // Node n'a pas IndexedDB ; en RN -> ./adapters/asyncStorage
+import { EventSource } from "eventsource"; // le watcher temps réel du SDK utilise SSE ; absent en Node, fourni par react-native-sse en RN
+(globalThis as any).EventSource ??= EventSource;
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
