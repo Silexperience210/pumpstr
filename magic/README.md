@@ -33,7 +33,7 @@ exactement pareil.
 
 | Réel | Stub / à venir |
 |---|---|
-| Wallet créateur Arkade (adresse `tark1…`, solde live) | Détection tip = poll du solde toutes les 4 s (→ subscription VTXO temps réel ensuite) |
+| Wallet créateur Arkade + **détection tip temps réel** (`wallet.notifyIncomingFunds`, SSE) | Identité du tippeur — un VTXO entrant n'a pas encore d'auteur (viendra avec Nostr) |
 | Facture LN-in via Boltz (`createLightningInvoice`) | Pas encore de Lightning Address `user@host` (LUD-16) — facture à la demande |
 | Overlay + page tip temps réel (WebSocket) | Identité Nostr / NIP-53 live (couche suivante) |
 | `simulate` pour démo instantanée | Vidéo (Cloudflare Stream / origine) — l'overlay se pose dessus dans OBS |

@@ -24,6 +24,18 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { SingleKey, Wallet } from "@arkade-os/sdk";
 import { ArkadeSwaps, BoltzSwapProvider } from "@arkade-os/boltz-swap";
 
+// notifyIncomingFunds démarre aussi un watcher ON-CHAIN (Electrum WS). Sur mutinynet, sans
+// endpoint Electrum joignable, il boucle en reconnexion. Les tips OFF-CHAIN (VTXO via SSE)
+// n'en dépendent pas — on tait juste ce bruit précis pour garder des logs propres.
+for (const m of ["error", "warn", "log"] as const) {
+  const orig = (console[m] as any).bind(console);
+  (console[m] as any) = (...a: any[]) => {
+    const s = String(a[0] ?? "");
+    if (s.includes("WebSocket error") || s.includes("Scheduling WebSocket reconnect")) return;
+    orig(...a);
+  };
+}
+
 const PORT = Number(process.env.PORT ?? 4242);
 const ARK_SERVER_URL = process.env.ARK_SERVER_URL ?? "https://mutinynet.arkade.sh";
 const BOLTZ_NETWORK = process.env.BOLTZ_NETWORK ?? "mutinynet";
@@ -42,7 +54,6 @@ function loadOrCreateKeyHex(): string {
 
 // ---------- état ----------
 let creatorAddress = "";
-let lastTotal = 0;
 const recentTips: { amount: number; from: string; at: number }[] = [];
 
 // ---------- Arkade (le vrai rail) ----------
@@ -55,10 +66,6 @@ const swaps = new ArkadeSwaps({
   swapProvider: new BoltzSwapProvider({ network: BOLTZ_NETWORK as any }),
   swapManager: true, // auto-claim des paiements LN entrants
 });
-try {
-  const b: any = await wallet.getBalance();
-  lastTotal = Number(b?.total ?? 0);
-} catch { /* solde lu au prochain tick */ }
 console.log(`[arkade] créateur prêt — adresse: ${creatorAddress}`);
 
 // ---------- WebSocket : pousse les tips ----------
@@ -76,15 +83,30 @@ function registerTip(amount: number, from = "anon", via = "demo") {
   console.log(`[tip] +${amount} sats — ${from} (${via})`);
 }
 
-// ---------- détection des vrais tips : poll + diff ----------
-setInterval(async () => {
-  try {
-    const b: any = await wallet.getBalance();
-    const total = Number(b?.total ?? 0);
-    if (total > lastTotal) registerTip(total - lastTotal, "lightning", "ln");
-    lastTotal = total;
-  } catch { /* opérateur momentanément injoignable */ }
-}, 4000);
+// ---------- détection des tips : subscription temps réel (SDK) ----------
+// wallet.notifyIncomingFunds pousse les fonds entrants via l'indexer (SSE, d'où le
+// polyfill EventSource). On compte le NET (newVtxos - spentVtxos) pour ignorer les
+// renouvellements de VTXO et le change de nos propres envois — seul un net > 0 = vrai tip.
+const sumValue = (coins: any[] = []) =>
+  coins.reduce((s, c) => s + Number(c?.value ?? c?.amount ?? 0), 0);
+
+let stopWatch: (() => void) | undefined;
+try {
+  stopWatch = await (wallet as any).notifyIncomingFunds((funds: any) => {
+    if (Array.isArray(funds?.newVtxos)) {
+      const net = sumValue(funds.newVtxos) - sumValue(funds.spentVtxos); // off-chain : LN-in claim ou tip P2P
+      if (net > 0) registerTip(net, "anon", "vtxo");
+    } else if (Array.isArray(funds?.coins)) {
+      const net = sumValue(funds.coins); // on-chain : boarding
+      if (net > 0) registerTip(net, "anon", "boarding");
+    }
+  });
+  console.log("[arkade] subscription temps réel des fonds entrants : ON");
+} catch (e: any) {
+  console.error("[arkade] notifyIncomingFunds a échoué:", e?.message ?? e);
+}
+
+process.on("SIGINT", () => { stopWatch?.(); process.exit(0); });
 
 // ---------- HTTP ----------
 const MIME: Record<string, string> = {

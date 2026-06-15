@@ -67,6 +67,11 @@ Pumpstr/
   watcher de contrats — sinon spam `ReferenceError: EventSource is not defined`). En RN : `./adapters/asyncStorage` + `react-native-sse`.
 - **Node 22 LTS** requis (engine `>=22.12 <25`). `Wallet.create` ouvre une **souscription WebSocket**
   qui garde le process vivant (→ `process.exit()` dans un script ; comportement voulu dans un serveur).
+- **Temps réel** : `await wallet.notifyIncomingFunds(cb)` → retourne un `unsub()`. `cb` reçoit
+  `{type:'vtxo', newVtxos, spentVtxos}` (off-chain) ou `{type:'utxo', coins}` (on-chain) ; chaque coin a
+  `.value` (sats). Compter le **net = Σnew − Σspent** pour ignorer renouvellements/change. ⚠️ démarre aussi
+  un watcher Electrum on-chain qui boucle en reconnexion sur mutinynet (cosmétique ; off-chain non affecté ;
+  bruit filtré dans `magic/server.ts`). API trouvée par **introspection runtime** (types bundlés en chunks).
 
 ## Comment lancer
 ```bash
@@ -85,7 +90,9 @@ ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin 
 
 ## Prochaines étapes (ordre suggéré)
 1. **Spike #2** : `PaymentRail.escrowClaimable()` — VTXO réclamable via Arkade Script (rewards async/offline).
-2. Détection des tips : remplacer le poll du solde (`magic/server.ts`) par la **subscription VTXO temps réel** du SDK.
+2. ✅ **Fait** — détection des tips en **temps réel** via `wallet.notifyIncomingFunds((funds) => …)` dans
+   `magic/server.ts` (API découverte par introspection runtime ; filtre net = newVtxos − spentVtxos). Reste :
+   y attacher l'**identité du tippeur** (npub) — un VTXO entrant ne porte pas encore d'auteur.
 3. **Lightning Address (LUD-16)** `pseudo@host` adossée au wallet (`.well-known/lnurlp/...`).
 4. **Identité Nostr** : 1 seed → npub + wallet Arkade ; publisher **NIP-53** (`kind:30311`) au passage live.
 5. **Vidéo** sous l'overlay (Cloudflare Stream) ; puis **node Docker** + **portail fédéré** (client Nostr + indexer).
