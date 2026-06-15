@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pumpstr · lives</title>
+<style>
+  :root { --gold:#ffb000; --hot:#ff5e00; --neon:#00ffd1; --card:#15131f; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:"Segoe UI",system-ui,sans-serif; color:#fff; min-height:100vh;
+    background:radial-gradient(120% 90% at 50% 0%, #1a1726, #0a0910 55%, #050409); }
+  header { padding:26px 24px 10px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+  .brand { font-weight:800; font-size:24px; } .brand b { color:var(--gold); }
+  .tag { color:#8a83a8; font-size:13px; }
+  .status { font-size:12px; color:#6b6588; }
+  .status .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#ff3b3b; box-shadow:0 0 8px #ff3b3b; margin-right:6px; animation:pulse 1.3s infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
+
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:18px; padding:18px 24px 60px; }
+  .card { background:var(--card); border:1px solid #2a2640; border-radius:18px; overflow:hidden;
+    transition:.18s; display:flex; flex-direction:column; }
+  .card:hover { border-color:var(--gold); transform:translateY(-3px); box-shadow:0 18px 50px rgba(0,0,0,.5); }
+  .thumb { aspect-ratio:16/9; background:linear-gradient(135deg,#241a33,#12101c); position:relative; display:flex; align-items:center; justify-content:center; }
+  .thumb img { width:100%; height:100%; object-fit:cover; }
+  .thumb .ph { font-size:46px; opacity:.5; }
+  .badge { position:absolute; top:10px; left:10px; font-size:11px; font-weight:800; padding:4px 9px; border-radius:99px;
+    background:#ff2d2d; color:#fff; letter-spacing:.5px; }
+  .badge.ended { background:#3a3550; color:#b9b2d6; }
+  .viewers { position:absolute; bottom:10px; right:10px; font-size:11px; font-weight:700; padding:3px 8px; border-radius:99px; background:rgba(0,0,0,.6); color:#ffd47a; }
+  .body { padding:14px; flex:1; display:flex; flex-direction:column; gap:10px; }
+  .title { font-weight:800; font-size:16px; line-height:1.25; }
+  .host { display:flex; align-items:center; gap:9px; }
+  .host img { width:30px; height:30px; border-radius:50%; background:#0e0c16; }
+  .host .n { font-size:13px; color:#cfc9e6; } .host .n small { display:block; color:#7d769b; font-size:10px; }
+  .summary { font-size:12px; color:#8a83a8; flex:1; }
+  .watch { display:block; text-align:center; padding:11px; border-radius:11px; font-weight:800; text-decoration:none;
+    background:linear-gradient(90deg,var(--hot),var(--gold)); color:#1a1206; }
+  .watch:hover { filter:brightness(1.08); }
+
+  .empty { grid-column:1/-1; text-align:center; color:#6b6588; padding:80px 20px; }
+  .empty b { color:#cfc9e6; }
+  footer { text-align:center; color:#4d4866; font-size:11px; padding:0 20px 30px; }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="brand">⚡ <b>PUMPSTR</b> · lives</div>
+      <div class="tag">une lentille Nostr (NIP-53) sur le réseau — pas une base centrale</div>
+    </div>
+    <div class="status"><span class="dot"></span><span id="stat">connexion aux relais…</span></div>
+  </header>
+  <div class="grid" id="grid"><div class="empty" id="empty">à l'écoute des lives <b>#pumpstr</b>…</div></div>
+  <footer>L'agrégation EST le réseau Nostr. N'importe qui peut lancer un autre portail sur les mêmes events.</footer>
+
+<script type="module">
+  import { SimplePool, nip19 } from "https://esm.sh/nostr-tools@2";
+
+  const RELAYS = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"];
+  const pool = new SimplePool();
+  const dicebear = (s) => `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(s || "x")}`;
+  const esc = (s) => String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;", '"':"&quot;" }[c]));
+  const tagv = (ev, k) => (ev.tags.find((t) => t[0] === k) || [])[1];
+
+  const lives = new Map();   // key = pubkey:d  ->  event (le plus récent)
+  const profiles = new Map();
+  const gridEl = document.getElementById("grid");
+  const emptyEl = document.getElementById("empty");
+  const statEl = document.getElementById("stat");
+
+  async function profileOf(pubkey) {
+    if (profiles.has(pubkey)) return profiles.get(pubkey);
+    const fallback = { name: nip19.npubEncode(pubkey).slice(0, 11) + "…", picture: dicebear(pubkey) };
+    profiles.set(pubkey, fallback);
+    try {
+      const ev = await pool.get(RELAYS, { kinds: [0], authors: [pubkey] });
+      if (ev?.content) {
+        const m = JSON.parse(ev.content);
+        const p = { name: m.display_name || m.name || fallback.name, picture: m.picture || dicebear(pubkey) };
+        profiles.set(pubkey, p); render();
+      }
+    } catch {}
+    return profiles.get(pubkey);
+  }
+
+  function upsert(ev) {
+    const d = tagv(ev, "d") || "";
+    const key = `${ev.pubkey}:${d}`;
+    const prev = lives.get(key);
+    if (prev && prev.created_at >= ev.created_at) return; // remplaçable : garde le plus récent
+    lives.set(key, ev);
+    profileOf(ev.pubkey);
+    render();
+  }
+
+  function render() {
+    const items = [...lives.values()].sort((a, b) => {
+      const sa = tagv(a, "status") === "live" ? 1 : 0, sb = tagv(b, "status") === "live" ? 1 : 0;
+      return sb - sa || b.created_at - a.created_at;
+    });
+    if (!items.length) { gridEl.innerHTML = ""; gridEl.appendChild(emptyEl); return; }
+    gridEl.innerHTML = items.map((ev) => {
+      const status = tagv(ev, "status") || "live";
+      const prof = profiles.get(ev.pubkey) || { name: "…", picture: dicebear(ev.pubkey) };
+      const img = tagv(ev, "image");
+      const viewers = tagv(ev, "current_participants");
+      const title = tagv(ev, "title") || "Live";
+      const summary = tagv(ev, "summary") || "";
+      return `<div class="card">
+        <div class="thumb">
+          ${img ? `<img src="${esc(img)}" onerror="this.remove()" />` : `<span class="ph">📡</span>`}
+          <span class="badge ${status === "live" ? "" : "ended"}">${status === "live" ? "🔴 LIVE" : "terminé"}</span>
+          ${viewers ? `<span class="viewers">👁 ${esc(viewers)}</span>` : ""}
+        </div>
+        <div class="body">
+          <div class="title">${esc(title)}</div>
+          <div class="host">
+            <img src="${esc(prof.picture)}" onerror="this.src='${dicebear(ev.pubkey)}'" />
+            <div class="n">${esc(prof.name)}<small>${esc(nip19.npubEncode(ev.pubkey).slice(0, 14))}…</small></div>
+          </div>
+          <div class="summary">${esc(summary)}</div>
+          <a class="watch" href="/tip.html">▶ Regarder &amp; tipper</a>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  const sub = pool.subscribeMany(RELAYS, [{ kinds: [30311], "#t": ["pumpstr"] }], {
+    onevent: (ev) => { statEl.textContent = "à l'écoute · " + lives.size + " live(s)"; upsert(ev); },
+    oneose: () => { statEl.textContent = lives.size ? "à l'écoute · " + lives.size + " live(s)" : "aucun live #pumpstr pour l'instant"; },
+  });
+  setTimeout(() => { if (!lives.size) statEl.textContent = "aucun live #pumpstr pour l'instant"; }, 6000);
+  window.addEventListener("beforeunload", () => sub.close());
+</script>
+</body>
+</html>

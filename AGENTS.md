@@ -43,7 +43,7 @@ Pumpstr/
 ├── README.md            ← pitch + quickstart
 ├── packages/payment-rail/  ← interface PaymentRail VERROUILLÉE (défaut : Arkade)
 ├── node/                ← scaffold de l'instance auto-hébergeable (Docker/Umbrel) — pas encore implémenté
-├── portal/              ← le « site » = client Nostr + indexer (spec dans le README)
+├── portal/              ← portail fédéré : index.html = client Nostr (kind:30311 #t=pumpstr), servi à /portal
 ├── spike/               ← Spike A : preuve Arkade RN + LN-in (smoke.ts, ln-in.ts, SPIKE-RESULT.md)
 └── magic/               ← LA TRANCHE MAGIQUE, runnable : server.ts + public/overlay.html + public/tip.html
 ```
@@ -96,9 +96,10 @@ ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin 
    du tippeur** : il signe une **zap request NIP-57 (kind 9734)**, le backend la **vérifie** (`verifyEvent`) et
    résout son profil (kind 0 : nom + avatar). Corrélation identité↔paiement LN via `waitAndClaim` (dédup par txid).
 3. **Lightning Address (LUD-16)** `pseudo@host` adossée au wallet (`.well-known/lnurlp/...`).
-4. ✅ **Partiel** — **créateur** : 1 clé → npub + wallet Arkade réalisé (`getPublicKey` sur la clé du wallet,
-   `magic/server.ts`). Reste : le **publisher NIP-53** (`kind:30311`) au passage live + publier les **zap receipts (9735)**.
-5. **Vidéo** sous l'overlay (Cloudflare Stream) ; puis **node Docker** + **portail fédéré** (client Nostr + indexer).
+4. ✅ **Fait** — créateur 1 clé → npub + wallet ; **publisher NIP-53** (`kind:30311`, signé clé créateur,
+   publié + **round-trip relais vérifié**) ; **zap receipts NIP-57 (9735)** publiés sur paiement LN réglé.
+5. ✅ **Portail fédéré** construit (`portal/index.html` : client Nostr lisant `kind:30311 #t=pumpstr`,
+   servi à `/portal`). Reste : **vidéo** sous l'overlay (Cloudflare Stream / origine) + **packaging node Docker/Umbrel**.
 
 ## Questions ouvertes (à trancher avec le porteur)
 - Sémantique de « **la review** » : modération-avant-payout (hypothèse retenue) vs curation-to-earn.

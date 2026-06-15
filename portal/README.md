@@ -2,6 +2,10 @@
 
 Le « site » qui agrège tous les lives. **Un client Nostr + un indexer. Jamais un chokepoint.**
 
+> ✅ **Implémenté** : [`index.html`](./index.html) — client Nostr (browser) qui s'abonne à `kind:30311 #t=pumpstr`
+> et rend la grille des lives (titre, hôte résolu kind-0, statut, viewers). Servi par le node `magic/` à **`/portal`**.
+> Démo : `cd magic && npm start` puis ouvre http://localhost:4242/portal (le live du node y apparaît).
+
 ## Principe (ADR-003)
 
 Le portail **ne tient pas de registre des nodes**. Il s'abonne aux events NIP-53 `kind:30311`
