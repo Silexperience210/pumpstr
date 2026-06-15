@@ -38,6 +38,27 @@ for (const m of ["error", "warn", "log"] as const) {
   };
 }
 
+// Le watcher ON-CHAIN (Esplora/Electrum) peut THROW (fetch/TLS transitoires sur mutinynet,
+// p.ex. CERT_NOT_YET_VALID) et tuer le process via une rejection non gérée. L'OFF-CHAIN
+// (VTXO via SSE) n'en dépend pas -> on garde le serveur vivant, fail-fast seulement sur l'inattendu.
+let onchainWarned = false;
+const isOnchainNoise = (e: any) =>
+  /fetch failed|CERT_NOT_YET_VALID|certificate|EsploraProvider|ContractWatcher|onchain|ECONN|ETIMEDOUT|ENOTFOUND/i
+    .test(`${e?.message ?? e} ${e?.cause?.code ?? ""} ${e?.stack ?? ""}`);
+for (const ev of ["unhandledRejection", "uncaughtException"] as const) {
+  process.on(ev, (e: any) => {
+    if (isOnchainNoise(e)) {
+      if (!onchainWarned) {
+        onchainWarned = true;
+        console.error("[arkade] watcher on-chain indisponible (off-chain non affecté) :", String(e?.cause?.code ?? e?.message ?? e));
+      }
+      return;
+    }
+    console.error(`[fatal] ${ev}:`, e?.stack ?? e);
+    process.exit(1);
+  });
+}
+
 const PORT = Number(process.env.PORT ?? 4242);
 const ARK_SERVER_URL = process.env.ARK_SERVER_URL ?? "https://mutinynet.arkade.sh";
 const BOLTZ_NETWORK = process.env.BOLTZ_NETWORK ?? "mutinynet";

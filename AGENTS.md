@@ -69,9 +69,11 @@ Pumpstr/
   qui garde le process vivant (→ `process.exit()` dans un script ; comportement voulu dans un serveur).
 - **Temps réel** : `await wallet.notifyIncomingFunds(cb)` → retourne un `unsub()`. `cb` reçoit
   `{type:'vtxo', newVtxos, spentVtxos}` (off-chain) ou `{type:'utxo', coins}` (on-chain) ; chaque coin a
-  `.value` (sats). Compter le **net = Σnew − Σspent** pour ignorer renouvellements/change. ⚠️ démarre aussi
-  un watcher Electrum on-chain qui boucle en reconnexion sur mutinynet (cosmétique ; off-chain non affecté ;
-  bruit filtré dans `magic/server.ts`). API trouvée par **introspection runtime** (types bundlés en chunks).
+  `.value` (sats). Compter le **net = Σnew − Σspent** pour ignorer renouvellements/change. ⚠️ démarre aussi un
+  **watcher on-chain** (Electrum WS + Esplora) qui, sur mutinynet, boucle en reconnexion **ET peut throw**
+  (fetch/TLS, p.ex. `CERT_NOT_YET_VALID`) → **plante le process sans garde**. Off-chain non affecté ;
+  `magic/server.ts` filtre le bruit + ajoute un guard `uncaughtException`/`unhandledRejection`. API trouvée par
+  **introspection runtime** (types bundlés en chunks).
 
 ## Comment lancer
 ```bash
