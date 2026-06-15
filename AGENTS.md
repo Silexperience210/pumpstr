@@ -95,7 +95,10 @@ ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin 
 2. ✅ **Fait** — détection des tips **temps réel** (`wallet.notifyIncomingFunds`, filtre net) **+ identité Nostr
    du tippeur** : il signe une **zap request NIP-57 (kind 9734)**, le backend la **vérifie** (`verifyEvent`) et
    résout son profil (kind 0 : nom + avatar). Corrélation identité↔paiement LN via `waitAndClaim` (dédup par txid).
-3. **Lightning Address (LUD-16)** `pseudo@host` adossée au wallet (`.well-known/lnurlp/...`).
+3. ✅ **Fait** — Lightning Address **LUD-16** `pay@host` (`.well-known/lnurlp/<user>` + callback Boltz LN-in)
+   avec **zaps NIP-57** (LUD-21 `allowsNostr`/`nostrPubkey`, reçu 9735). Payable depuis tout wallet LN /
+   client Nostr. Prod : `LN_ADDRESS_BASE_URL=https://domaine` (via CF Tunnel). Limite : Boltz ne pose pas de
+   `description_hash` strict → vérif NIP-57 stricte best-effort.
 4. ✅ **Fait** — créateur 1 clé → npub + wallet ; **publisher NIP-53** (`kind:30311`, signé clé créateur,
    publié + **round-trip relais vérifié**) ; **zap receipts NIP-57 (9735)** publiés sur paiement LN réglé.
 5. ✅ **Portail fédéré** (`portal/index.html`, client Nostr `kind:30311 #t=pumpstr`, servi à `/portal`)

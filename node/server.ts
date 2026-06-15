@@ -74,6 +74,12 @@ const STREAM = {
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC = join(HERE, "public");
 const KEY_FILE = process.env.KEY_FILE ?? join(HERE, ".creator-key"); // en conteneur : monté sur un volume
+// Lightning Address (LUD-16) : <user>@<domaine>. En prod, mets LN_ADDRESS_BASE_URL=https://ton-domaine
+// (exposé via Cloudflare Tunnel sur Umbrel) pour que n'importe quel wallet LN puisse payer.
+const LN_ADDRESS_USER = process.env.LN_ADDRESS_USER || "pay";
+const LN_ADDRESS_BASE = (process.env.LN_ADDRESS_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
+const lnAddress = `${LN_ADDRESS_USER}@${LN_ADDRESS_BASE.replace(/^https?:\/\//, "")}`;
+const lnMetadata = JSON.stringify([["text/plain", `Tip ⚡ ${lnAddress} (Pumpstr)`], ["text/identifier", lnAddress]]);
 
 function loadOrCreateKeyHex(): string {
   if (existsSync(KEY_FILE)) return readFileSync(KEY_FILE, "utf8").trim();
@@ -292,11 +298,62 @@ function readBody(req: any): Promise<string> {
 }
 const parseJson = (s: string): any => { try { return JSON.parse(s || "{}"); } catch { return {}; } };
 
+// Règle un swap LN-in : à la confirmation, fire le tip identifié + publie le zap receipt 9735.
+function settleAndZap(pendingSwap: any, bolt11: string | null, amount: number, tipper: Tipper, zapRequest?: any) {
+  if (!pendingSwap || typeof (swaps as any).waitAndClaim !== "function") return;
+  (swaps as any).waitAndClaim(pendingSwap)
+    .then((cl: any) => {
+      if (cl?.txid) claimedTxids.add(cl.txid);
+      registerTip(amount, tipper);
+      if (zapRequest && bolt11) publishZapReceipt(zapRequest, bolt11, amount);
+    })
+    .catch((e: any) => console.error("[ln] waitAndClaim:", e?.message ?? e));
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
 
   if (url.pathname === "/api/creator") {
-    return sendJson(res, 200, { address: creatorAddress, npub: creatorNpub, recentTips });
+    return sendJson(res, 200, { address: creatorAddress, npub: creatorNpub, lnAddress, recentTips });
+  }
+
+  // LUD-16 Lightning Address : <user>@host -> .well-known/lnurlp/<user> (LUD-06 payRequest + LUD-21/NIP-57)
+  if (url.pathname.startsWith("/.well-known/lnurlp/")) {
+    const user = decodeURIComponent(url.pathname.split("/").pop() || "");
+    if (user !== LN_ADDRESS_USER) return sendJson(res, 404, { status: "ERROR", reason: "unknown user" });
+    return sendJson(res, 200, {
+      tag: "payRequest",
+      callback: `${LN_ADDRESS_BASE}/api/lnurlp/callback`,
+      minSendable: 1000,             // 1 sat (msats)
+      maxSendable: 100_000_000_000,  // 100M sats
+      metadata: lnMetadata,
+      commentAllowed: 140,
+      allowsNostr: true,             // LUD-21 / NIP-57
+      nostrPubkey: creatorPubkey,    // les zaps sont signés par cette clé (= clé wallet, ADR-004)
+    });
+  }
+
+  // Callback LNURL-pay : rend une facture (via Boltz LN-in) ; gère les zaps NIP-57.
+  if (url.pathname === "/api/lnurlp/callback") {
+    const sats = Math.floor(Number(url.searchParams.get("amount") || 0) / 1000);
+    if (!sats || sats < 1) return sendJson(res, 200, { status: "ERROR", reason: "montant invalide" });
+    let zapRequest: any = null;
+    const nostrParam = url.searchParams.get("nostr");
+    if (nostrParam) { try { zapRequest = JSON.parse(nostrParam); } catch {} }
+    const comment = url.searchParams.get("comment") || "";
+    try {
+      // NIP-57 : description = la zap request (sinon les métadonnées LUD-06). NB : Boltz ne pose pas
+      // de description_hash strict -> vérif NIP-57 stricte best-effort ; le reçu 9735 reste signé+publié.
+      const description = zapRequest ? JSON.stringify(zapRequest) : lnMetadata;
+      const r: any = await swaps.createLightningInvoice({ amount: sats, description });
+      const bolt11 = r?.invoice ?? r?.bolt11 ?? r?.paymentRequest ?? null;
+      if (!bolt11) throw new Error("pas de facture");
+      const tipper = await tipperFromBody({ zapRequest, comment }, "lnaddr");
+      settleAndZap(r?.pendingSwap ?? r, bolt11, sats, tipper, zapRequest);
+      return sendJson(res, 200, { pr: bolt11, routes: [] });
+    } catch (e: any) {
+      return sendJson(res, 200, { status: "ERROR", reason: e?.message ?? String(e) });
+    }
   }
 
   if (url.pathname === "/api/stream") {
@@ -309,20 +366,9 @@ const server = createServer(async (req, res) => {
     const zapRequest = body?.zapRequest;
     const tipper = await tipperFromBody(body, "ln");
     try {
-      const r: any = await swaps.createLightningInvoice({ amount });
+      const r: any = await swaps.createLightningInvoice({ amount, description: zapRequest ? JSON.stringify(zapRequest) : "Tip Pumpstr" });
       const bolt11 = r?.invoice ?? r?.bolt11 ?? r?.paymentRequest ?? null;
-      const pendingSwap = r?.pendingSwap ?? r;
-      // corrélation identité<->paiement : quand CE swap se règle, fire le tip identifié
-      // + publie le zap receipt NIP-57 (9735) — la preuve Nostr du zap.
-      if (pendingSwap && typeof (swaps as any).waitAndClaim === "function") {
-        (swaps as any).waitAndClaim(pendingSwap)
-          .then((cl: any) => {
-            if (cl?.txid) claimedTxids.add(cl.txid);
-            registerTip(amount, tipper);
-            if (zapRequest && bolt11) publishZapReceipt(zapRequest, bolt11, amount);
-          })
-          .catch((e: any) => console.error("[ln] waitAndClaim:", e?.message ?? e));
-      }
+      settleAndZap(r?.pendingSwap ?? r, bolt11, amount, tipper, zapRequest);
       return sendJson(res, 200, { bolt11, amount });
     } catch (e: any) {
       return sendJson(res, 502, { error: e?.message ?? String(e) });
@@ -370,7 +416,8 @@ server.listen(PORT, () => {
   console.log(`\n  🔥 PUMPSTR node en ligne :`);
   console.log(`     overlay (source OBS) : http://localhost:${PORT}/overlay.html`);
   console.log(`     page tip (viewer)    : http://localhost:${PORT}/tip.html`);
-  console.log(`     portail fédéré       : http://localhost:${PORT}/portal\n`);
+  console.log(`     portail fédéré       : http://localhost:${PORT}/portal`);
+  console.log(`     lightning address    : ${lnAddress}\n`);
   publishLive("live");                            // annonce le live sur Nostr (NIP-53)
   setInterval(() => publishLive("live"), 45_000); // rafraîchit statut + nb de viewers
 });
