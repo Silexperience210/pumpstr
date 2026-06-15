@@ -33,7 +33,7 @@ exactement pareil.
 
 | Réel | Stub / à venir |
 |---|---|
-| Wallet créateur Arkade + **détection tip temps réel** (`wallet.notifyIncomingFunds`, SSE) | Identité du tippeur — un VTXO entrant n'a pas encore d'auteur (viendra avec Nostr) |
+| Wallet créateur Arkade + détection temps réel + **identité Nostr du tippeur** (zap NIP-57 signé + profil résolu) | Publisher NIP-53 du live ; zap receipts (9735) |
 | Facture LN-in via Boltz (`createLightningInvoice`) | Pas encore de Lightning Address `user@host` (LUD-16) — facture à la demande |
 | Overlay + page tip temps réel (WebSocket) | Identité Nostr / NIP-53 live (couche suivante) |
 | `simulate` pour démo instantanée | Vidéo (Cloudflare Stream / origine) — l'overlay se pose dessus dans OBS |
@@ -45,6 +45,7 @@ exactement pareil.
 | `PORT` | `4242` | |
 | `ARK_SERVER_URL` | `https://mutinynet.arkade.sh` | opérateur (mainnet : `https://arkade.computer`) |
 | `BOLTZ_NETWORK` | `mutinynet` | `bitcoin` \| `mutinynet` \| `regtest` |
+| `NOSTR_RELAYS` | damus, nos.lol, primal | relais pour résoudre le profil du tippeur (kind 0) |
 
 La clé privée du wallet créateur est générée au 1er boot dans `.creator-key` (gitignoré).
 En RN, le stockage passera par `./adapters/asyncStorage` (ici : polyfill `fake-indexeddb` pour Node).

@@ -1,19 +1,20 @@
 /**
  * Pumpstr — la tranche magique (backend).
  *
- * Tient un VRAI wallet créateur Arkade (validé au spike A), expose :
- *   - une page overlay (source navigateur OBS) qui explose à chaque tip
- *   - une page tip (viewer) qui génère une vraie facture LN-in
- *   - un flux WebSocket qui pousse les tips en temps réel
+ * Tient un VRAI wallet créateur Arkade (validé au spike A) ET dérive l'identité Nostr
+ * du créateur de LA MÊME clé (ADR-004 : 1 seed -> npub + wallet). Expose :
+ *   - un overlay (source OBS) qui explose à chaque tip, AVEC l'identité Nostr du tippeur
+ *   - une page tip (viewer) : le tippeur s'authentifie en Nostr (NIP-07 ou clé éphémère)
+ *     et signe une zap request (NIP-57 kind 9734) ; on génère une vraie facture LN-in
+ *   - un flux WebSocket temps réel
  *
- * Détection des tips : poll du solde Arkade + diff. Un bouton "simulate" permet
- * de déclencher l'overlay sans sats (démo). Quand un vrai paiement LN arrive
- * (auto-claim Boltz), le solde monte → l'overlay réagit pareil.
+ * Identité d'un tip : le tippeur signe une zap request -> on VÉRIFIE la signature, on
+ * RÉSOUT son profil (kind 0 : nom + avatar), et on corrèle identité<->paiement via le swap.
  *
- * Run : npm start   (Node 22 LTS, réseau réel requis pour l'opérateur)
+ * Run : npm start   (Node 22 LTS, réseau réel requis)
  */
 import "fake-indexeddb/auto"; // Node n'a pas IndexedDB ; en RN -> ./adapters/asyncStorage
-import { EventSource } from "eventsource"; // le watcher temps réel du SDK utilise SSE ; absent en Node, fourni par react-native-sse en RN
+import { EventSource } from "eventsource"; // SSE du watcher SDK ; absent en Node, react-native-sse en RN
 (globalThis as any).EventSource ??= EventSource;
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -23,10 +24,11 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import { SingleKey, Wallet } from "@arkade-os/sdk";
 import { ArkadeSwaps, BoltzSwapProvider } from "@arkade-os/boltz-swap";
+import { SimplePool, getPublicKey, verifyEvent, nip19 } from "nostr-tools";
 
-// notifyIncomingFunds démarre aussi un watcher ON-CHAIN (Electrum WS). Sur mutinynet, sans
-// endpoint Electrum joignable, il boucle en reconnexion. Les tips OFF-CHAIN (VTXO via SSE)
-// n'en dépendent pas — on tait juste ce bruit précis pour garder des logs propres.
+// notifyIncomingFunds démarre aussi un watcher ON-CHAIN (Electrum WS) qui boucle en
+// reconnexion sur mutinynet (pas d'endpoint Electrum). Off-chain (VTXO via SSE) non affecté
+// -> on tait juste ce bruit précis pour garder des logs propres.
 for (const m of ["error", "warn", "log"] as const) {
   const orig = (console[m] as any).bind(console);
   (console[m] as any) = (...a: any[]) => {
@@ -39,6 +41,8 @@ for (const m of ["error", "warn", "log"] as const) {
 const PORT = Number(process.env.PORT ?? 4242);
 const ARK_SERVER_URL = process.env.ARK_SERVER_URL ?? "https://mutinynet.arkade.sh";
 const BOLTZ_NETWORK = process.env.BOLTZ_NETWORK ?? "mutinynet";
+const RELAYS = (process.env.NOSTR_RELAYS ?? "wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net")
+  .split(",").map((s) => s.trim()).filter(Boolean);
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC = join(HERE, "public");
 const KEY_FILE = join(HERE, ".creator-key");
@@ -52,21 +56,66 @@ function loadOrCreateKeyHex(): string {
   return hex;
 }
 
-// ---------- état ----------
+// ---------- identités ----------
+type Tipper = { name: string; pubkey?: string; picture?: string; comment?: string; via: string };
 let creatorAddress = "";
-const recentTips: { amount: number; from: string; at: number }[] = [];
+const recentTips: { amount: number; name: string; picture?: string; at: number }[] = [];
+
+// ---------- Nostr (résolution de profil + vérif des zap requests) ----------
+const pool = new SimplePool();
+const profileCache = new Map<string, { name: string; picture?: string }>();
+const shortNpub = (pubkey: string) => {
+  try { return nip19.npubEncode(pubkey).slice(0, 11) + "…"; } catch { return pubkey.slice(0, 8) + "…"; }
+};
+async function resolveProfile(pubkey: string): Promise<{ name: string; picture?: string }> {
+  if (profileCache.has(pubkey)) return profileCache.get(pubkey)!;
+  let prof: { name: string; picture?: string } = { name: shortNpub(pubkey) };
+  try {
+    const ev: any = await Promise.race([
+      pool.get(RELAYS, { kinds: [0], authors: [pubkey] }),
+      new Promise((r) => setTimeout(() => r(null), 4000)),
+    ]);
+    if (ev?.content) {
+      const meta = JSON.parse(ev.content);
+      prof = { name: meta.display_name || meta.name || shortNpub(pubkey), picture: meta.picture };
+    }
+  } catch { /* relais injoignable -> fallback npub court */ }
+  profileCache.set(pubkey, prof);
+  return prof;
+}
+/** Vérifie une zap request (NIP-57 kind 9734) signée et en extrait le tippeur. */
+function verifiedTipper(zr: any): { pubkey: string; comment: string } | null {
+  try {
+    if (!zr || typeof zr !== "object" || !verifyEvent(zr)) return null;
+    return { pubkey: zr.pubkey, comment: typeof zr.content === "string" ? zr.content.slice(0, 140) : "" };
+  } catch { return null; }
+}
+async function tipperFromBody(body: any, via: string): Promise<Tipper> {
+  const v = verifiedTipper(body?.zapRequest);
+  if (v) {
+    const prof = await resolveProfile(v.pubkey);
+    return { name: prof.name, pubkey: v.pubkey, picture: prof.picture, comment: v.comment || (body?.comment ?? ""), via };
+  }
+  // pas d'identité Nostr signée -> anonyme (nom libre optionnel)
+  return { name: (body?.name || "anon").toString().slice(0, 24), comment: (body?.comment ?? "").toString().slice(0, 140), via };
+}
 
 // ---------- Arkade (le vrai rail) ----------
 console.log(`[arkade] connexion à ${ARK_SERVER_URL} ...`);
-const identity = SingleKey.fromHex(loadOrCreateKeyHex());
+const keyHex = loadOrCreateKeyHex();
+const identity = SingleKey.fromHex(keyHex);
+const creatorPubkey = getPublicKey(Uint8Array.from(Buffer.from(keyHex, "hex"))); // MÊME clé -> Nostr
+const creatorNpub = nip19.npubEncode(creatorPubkey);
 const wallet = await Wallet.create({ identity, arkServerUrl: ARK_SERVER_URL });
 creatorAddress = await wallet.getAddress();
 const swaps = new ArkadeSwaps({
   wallet,
   swapProvider: new BoltzSwapProvider({ network: BOLTZ_NETWORK as any }),
-  swapManager: true, // auto-claim des paiements LN entrants
+  swapManager: false, // on claim explicitement par facture (waitAndClaim) -> corrélation identité fiable
 });
-console.log(`[arkade] créateur prêt — adresse: ${creatorAddress}`);
+console.log(`[arkade] créateur prêt`);
+console.log(`         adresse : ${creatorAddress}`);
+console.log(`         npub    : ${creatorNpub}`);
 
 // ---------- WebSocket : pousse les tips ----------
 const clients = new Set<WebSocket>();
@@ -74,31 +123,32 @@ function broadcast(msg: object) {
   const s = JSON.stringify(msg);
   for (const c of clients) if (c.readyState === 1) c.send(s);
 }
-function registerTip(amount: number, from = "anon", via = "demo") {
+function registerTip(amount: number, t: Tipper) {
   if (!Number.isFinite(amount) || amount <= 0) return;
   const at = Date.now();
-  recentTips.unshift({ amount, from, at });
+  recentTips.unshift({ amount, name: t.name, picture: t.picture, at });
   if (recentTips.length > 20) recentTips.length = 20;
-  broadcast({ type: "tip", amount, from, via, at });
-  console.log(`[tip] +${amount} sats — ${from} (${via})`);
+  broadcast({ type: "tip", amount, at, name: t.name, pubkey: t.pubkey, picture: t.picture, comment: t.comment, via: t.via });
+  console.log(`[tip] +${amount} sats — ${t.name} (${t.via})${t.comment ? ` : "${t.comment}"` : ""}`);
 }
 
-// ---------- détection des tips : subscription temps réel (SDK) ----------
-// wallet.notifyIncomingFunds pousse les fonds entrants via l'indexer (SSE, d'où le
-// polyfill EventSource). On compte le NET (newVtxos - spentVtxos) pour ignorer les
-// renouvellements de VTXO et le change de nos propres envois — seul un net > 0 = vrai tip.
-const sumValue = (coins: any[] = []) =>
-  coins.reduce((s, c) => s + Number(c?.value ?? c?.amount ?? 0), 0);
+// ---------- détection temps réel (SDK) + dédup des tips identifiés ----------
+// Les VTXO claimés par facture (waitAndClaim) sont déjà comptés AVEC identité ; on les
+// dédupe ici par txid pour que la subscription ne les recompte pas en "anon".
+const claimedTxids = new Set<string>();
+const sumValue = (coins: any[] = []) => coins.reduce((s, c) => s + Number(c?.value ?? c?.amount ?? 0), 0);
 
 let stopWatch: (() => void) | undefined;
 try {
   stopWatch = await (wallet as any).notifyIncomingFunds((funds: any) => {
     if (Array.isArray(funds?.newVtxos)) {
-      const net = sumValue(funds.newVtxos) - sumValue(funds.spentVtxos); // off-chain : LN-in claim ou tip P2P
-      if (net > 0) registerTip(net, "anon", "vtxo");
+      const fresh = funds.newVtxos.filter((v: any) => !claimedTxids.has(v.txid));
+      for (const v of funds.newVtxos) claimedTxids.delete(v.txid);
+      const net = sumValue(fresh) - sumValue(funds.spentVtxos); // net > 0 = vrai entrant non identifié
+      if (net > 0) registerTip(net, { name: "anon", via: "vtxo" });
     } else if (Array.isArray(funds?.coins)) {
-      const net = sumValue(funds.coins); // on-chain : boarding
-      if (net > 0) registerTip(net, "anon", "boarding");
+      const net = sumValue(funds.coins);
+      if (net > 0) registerTip(net, { name: "anon", via: "boarding" });
     }
   });
   console.log("[arkade] subscription temps réel des fonds entrants : ON");
@@ -106,33 +156,45 @@ try {
   console.error("[arkade] notifyIncomingFunds a échoué:", e?.message ?? e);
 }
 
-process.on("SIGINT", () => { stopWatch?.(); process.exit(0); });
+process.on("SIGINT", () => { stopWatch?.(); pool.close(RELAYS); process.exit(0); });
 
 // ---------- HTTP ----------
 const MIME: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript",
-  ".css": "text/css",
-  ".svg": "image/svg+xml",
+  ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml",
 };
 function sendJson(res: any, code: number, body: object) {
   res.statusCode = code;
   res.setHeader("content-type", "application/json");
   res.end(JSON.stringify(body));
 }
+function readBody(req: any): Promise<string> {
+  return new Promise((resolve) => {
+    let d = ""; req.on("data", (c: any) => (d += c)); req.on("end", () => resolve(d)); req.on("error", () => resolve(""));
+  });
+}
+const parseJson = (s: string): any => { try { return JSON.parse(s || "{}"); } catch { return {}; } };
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
 
   if (url.pathname === "/api/creator") {
-    return sendJson(res, 200, { address: creatorAddress, recentTips });
+    return sendJson(res, 200, { address: creatorAddress, npub: creatorNpub, recentTips });
   }
 
   if (url.pathname === "/api/invoice" && req.method === "POST") {
-    const amount = Number(url.searchParams.get("amount") ?? 1000);
+    const body = parseJson(await readBody(req));
+    const amount = Number(body.amount) || 1000;
+    const tipper = await tipperFromBody(body, "ln");
     try {
       const r: any = await swaps.createLightningInvoice({ amount });
       const bolt11 = r?.invoice ?? r?.bolt11 ?? r?.paymentRequest ?? null;
+      const pendingSwap = r?.pendingSwap ?? r;
+      // corrélation identité<->paiement : quand CE swap se règle, on fire le tip identifié
+      if (pendingSwap && typeof (swaps as any).waitAndClaim === "function") {
+        (swaps as any).waitAndClaim(pendingSwap)
+          .then((cl: any) => { if (cl?.txid) claimedTxids.add(cl.txid); registerTip(amount, tipper); })
+          .catch((e: any) => console.error("[ln] waitAndClaim:", e?.message ?? e));
+      }
       return sendJson(res, 200, { bolt11, amount });
     } catch (e: any) {
       return sendJson(res, 502, { error: e?.message ?? String(e) });
@@ -140,10 +202,11 @@ const server = createServer(async (req, res) => {
   }
 
   if (url.pathname === "/api/simulate" && req.method === "POST") {
-    const amount = Number(url.searchParams.get("amount") ?? Math.floor(Math.random() * 4900) + 100);
-    const from = url.searchParams.get("from") ?? "demo";
-    registerTip(amount, from, "demo");
-    return sendJson(res, 200, { ok: true, amount, from });
+    const body = parseJson(await readBody(req));
+    const amount = Number(body.amount) || Math.floor(Math.random() * 4900) + 100;
+    const tipper = await tipperFromBody(body, "demo");
+    registerTip(amount, tipper);
+    return sendJson(res, 200, { ok: true, amount, name: tipper.name });
   }
 
   // statique
@@ -162,13 +225,12 @@ const server = createServer(async (req, res) => {
 const wss = new WebSocketServer({ server, path: "/ws" });
 wss.on("connection", (ws) => {
   clients.add(ws);
-  ws.send(JSON.stringify({ type: "hello", address: creatorAddress, recentTips }));
+  ws.send(JSON.stringify({ type: "hello", address: creatorAddress, npub: creatorNpub, recentTips }));
   ws.on("close", () => clients.delete(ws));
 });
 
 server.listen(PORT, () => {
   console.log(`\n  🔥 PUMPSTR magic slice en ligne :`);
   console.log(`     overlay (source OBS) : http://localhost:${PORT}/overlay.html`);
-  console.log(`     page tip (viewer)    : http://localhost:${PORT}/tip.html`);
-  console.log(`     simuler un tip       : curl -X POST "http://localhost:${PORT}/api/simulate?amount=2100&from=satoshi"\n`);
+  console.log(`     page tip (viewer)    : http://localhost:${PORT}/tip.html\n`);
 });

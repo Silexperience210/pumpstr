@@ -90,11 +90,12 @@ ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin 
 
 ## Prochaines étapes (ordre suggéré)
 1. **Spike #2** : `PaymentRail.escrowClaimable()` — VTXO réclamable via Arkade Script (rewards async/offline).
-2. ✅ **Fait** — détection des tips en **temps réel** via `wallet.notifyIncomingFunds((funds) => …)` dans
-   `magic/server.ts` (API découverte par introspection runtime ; filtre net = newVtxos − spentVtxos). Reste :
-   y attacher l'**identité du tippeur** (npub) — un VTXO entrant ne porte pas encore d'auteur.
+2. ✅ **Fait** — détection des tips **temps réel** (`wallet.notifyIncomingFunds`, filtre net) **+ identité Nostr
+   du tippeur** : il signe une **zap request NIP-57 (kind 9734)**, le backend la **vérifie** (`verifyEvent`) et
+   résout son profil (kind 0 : nom + avatar). Corrélation identité↔paiement LN via `waitAndClaim` (dédup par txid).
 3. **Lightning Address (LUD-16)** `pseudo@host` adossée au wallet (`.well-known/lnurlp/...`).
-4. **Identité Nostr** : 1 seed → npub + wallet Arkade ; publisher **NIP-53** (`kind:30311`) au passage live.
+4. ✅ **Partiel** — **créateur** : 1 clé → npub + wallet Arkade réalisé (`getPublicKey` sur la clé du wallet,
+   `magic/server.ts`). Reste : le **publisher NIP-53** (`kind:30311`) au passage live + publier les **zap receipts (9735)**.
 5. **Vidéo** sous l'overlay (Cloudflare Stream) ; puis **node Docker** + **portail fédéré** (client Nostr + indexer).
 
 ## Questions ouvertes (à trancher avec le porteur)

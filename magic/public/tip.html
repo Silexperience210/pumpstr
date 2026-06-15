@@ -11,34 +11,40 @@
   body { font-family:"Segoe UI",system-ui,sans-serif; color:#fff; min-height:100vh;
     background:radial-gradient(120% 120% at 50% 0%, #1a1726, #0a0910 60%, #050409);
     display:flex; align-items:center; justify-content:center; padding:20px; }
-  .card { width:min(420px,94vw); background:var(--card); border:1px solid #2a2640; border-radius:20px;
-    padding:26px; box-shadow:0 24px 80px rgba(0,0,0,.6); }
-  .brand { font-weight:800; font-size:18px; margin-bottom:2px; }
-  .brand b { color:var(--gold); }
-  .sub { color:#8a83a8; font-size:13px; margin-bottom:20px; }
-  .row { display:flex; gap:10px; margin-bottom:14px; }
+  .card { width:min(430px,94vw); background:var(--card); border:1px solid #2a2640; border-radius:20px;
+    padding:24px; box-shadow:0 24px 80px rgba(0,0,0,.6); }
+  .brand { font-weight:800; font-size:18px; } .brand b { color:var(--gold); }
+  .sub { color:#8a83a8; font-size:13px; margin:2px 0 16px; }
+
+  /* identité Nostr */
+  .id { display:flex; align-items:center; gap:10px; background:#1b1830; border:1px solid #2f2a47;
+    border-radius:14px; padding:10px 12px; margin-bottom:16px; }
+  .id img { width:34px; height:34px; border-radius:50%; background:#0e0c16; flex:0 0 34px; }
+  .id .who { flex:1; min-width:0; } .id .who b { font-size:14px; }
+  .id .who small { display:block; color:#8a83a8; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .id button { background:#23203a; color:var(--neon); border:1px solid #2f2a47; border-radius:10px; padding:8px 10px; font-weight:700; font-size:12px; cursor:pointer; }
+  .id button:hover { border-color:var(--neon); }
+
+  .row { display:flex; gap:10px; margin-bottom:12px; }
   .amt { flex:1; padding:14px 8px; text-align:center; border-radius:12px; cursor:pointer; font-weight:800;
     background:#1e1b2e; border:1px solid #2f2a47; transition:.15s; }
   .amt:hover { border-color:var(--gold); }
   .amt.sel { background:linear-gradient(180deg,#3a2c12,#241a0c); border-color:var(--gold); color:var(--gold); }
   .amt small { display:block; font-weight:500; color:#9a93b5; font-size:11px; }
-  input { width:100%; padding:13px; border-radius:12px; background:#1e1b2e; border:1px solid #2f2a47; color:#fff; font-size:15px; }
+  input { width:100%; padding:13px; border-radius:12px; background:#1e1b2e; border:1px solid #2f2a47; color:#fff; font-size:15px; margin-bottom:4px; }
   input:focus { outline:none; border-color:var(--neon); }
-  .btns { display:flex; gap:10px; margin-top:16px; }
-  button { flex:1; padding:15px; border:0; border-radius:12px; font-weight:800; font-size:15px; cursor:pointer; transition:.15s; }
+  .btns { display:flex; gap:10px; margin-top:14px; }
+  button.act { flex:1; padding:15px; border:0; border-radius:12px; font-weight:800; font-size:15px; cursor:pointer; transition:.15s; }
   .pay { background:linear-gradient(90deg,var(--hot),var(--gold)); color:#1a1206; }
   .pay:hover { filter:brightness(1.08); }
   .sim { background:#1e1b2e; color:var(--neon); border:1px solid #2f2a47; }
   .sim:hover { border-color:var(--neon); }
-  .out { margin-top:18px; display:none; }
-  .out.show { display:block; }
+  .out { margin-top:16px; display:none; } .out.show { display:block; }
   canvas { display:block; margin:0 auto 12px; border-radius:12px; background:#fff; padding:10px; }
-  .inv { font-family:ui-monospace,monospace; font-size:11px; word-break:break-all; color:#b9b2d6;
-    background:#0e0c16; padding:10px; border-radius:10px; max-height:90px; overflow:auto; }
-  .copy { margin-top:8px; width:100%; padding:10px; background:#23203a; color:#fff; border-radius:10px; font-weight:700; }
+  .inv { font-family:ui-monospace,monospace; font-size:11px; word-break:break-all; color:#b9b2d6; background:#0e0c16; padding:10px; border-radius:10px; max-height:84px; overflow:auto; }
   .toast { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(80px);
-    background:linear-gradient(90deg,var(--hot),var(--gold)); color:#1a1206; padding:14px 22px; border-radius:14px;
-    font-weight:800; box-shadow:0 12px 40px rgba(255,120,0,.4); transition:transform .35s cubic-bezier(.2,1.5,.4,1); }
+    background:linear-gradient(90deg,var(--hot),var(--gold)); color:#1a1206; padding:14px 22px; border-radius:14px; font-weight:800;
+    box-shadow:0 12px 40px rgba(255,120,0,.4); transition:transform .35s cubic-bezier(.2,1.5,.4,1); }
   .toast.show { transform:translateX(-50%) translateY(0); }
   .net { margin-top:14px; text-align:center; font-size:11px; color:#6b6588; }
 </style>
@@ -46,31 +52,72 @@
 <body>
   <div class="card">
     <div class="brand">⚡ <b>PUMPSTR</b></div>
-    <div class="sub">Envoie des sats au créateur — en direct.</div>
+    <div class="sub">Envoie des sats au créateur — signé en Nostr, en direct.</div>
+
+    <div class="id">
+      <img id="idAva" alt="" />
+      <div class="who"><b id="idName">…</b><small id="idNpub"></small></div>
+      <button id="connect" title="Utiliser ton extension Nostr (NIP-07)">⚡ Connecter</button>
+    </div>
 
     <div class="row" id="amts">
       <div class="amt sel" data-v="210">210<small>sats</small></div>
       <div class="amt" data-v="2100">2 100<small>sats</small></div>
       <div class="amt" data-v="21000">21 000<small>sats</small></div>
     </div>
-    <input id="name" placeholder="ton pseudo (optionnel)" maxlength="24" />
+    <input id="comment" placeholder="un mot ? (commentaire du zap)" maxlength="140" />
 
     <div class="btns">
-      <button class="pay" id="pay">⚡ Payer en Lightning</button>
-      <button class="sim" id="sim">▶ Simuler (démo)</button>
+      <button class="act pay" id="pay">⚡ Payer en Lightning</button>
+      <button class="act sim" id="sim">▶ Simuler (démo)</button>
     </div>
 
     <div class="out" id="out">
       <canvas id="qr" width="200" height="200"></canvas>
       <div class="inv" id="inv"></div>
-      <button class="copy" id="copy">copier la facture</button>
     </div>
 
-    <div class="net">réseau : MutinyNet (signet) · facture payable depuis n'importe quel wallet LN de test</div>
+    <div class="net">réseau : MutinyNet (signet) · zap NIP-57 signé · facture payable depuis tout wallet LN de test</div>
   </div>
   <div class="toast" id="toast">⚡ tip reçu !</div>
 
-<script>
+<script type="module">
+  import { generateSecretKey, getPublicKey, finalizeEvent, nip19 } from "https://esm.sh/nostr-tools@2";
+
+  const RELAYS = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"];
+  const dicebear = (seed) => `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(seed)}`;
+
+  // ---- identité du tippeur : éphémère par défaut, NIP-07 sur demande ----
+  let me = null; // { mode, pubkey, sk? }
+  function setEphemeral() {
+    const sk = generateSecretKey();
+    const pubkey = getPublicKey(sk);
+    me = { mode: "ephemeral", pubkey, sk };
+    paintId("anon éphémère", nip19.npubEncode(pubkey), dicebear(pubkey));
+  }
+  async function connectNip07() {
+    if (!window.nostr) { alert("Aucune extension Nostr (NIP-07) détectée. Tu restes en identité éphémère."); return; }
+    try {
+      const pubkey = await window.nostr.getPublicKey();
+      me = { mode: "nip07", pubkey };
+      paintId("Nostr connecté", nip19.npubEncode(pubkey), dicebear(pubkey));
+    } catch { /* refus */ }
+  }
+  function paintId(name, npub, ava) {
+    document.getElementById("idName").textContent = name;
+    document.getElementById("idNpub").textContent = npub;
+    document.getElementById("idAva").src = ava;
+  }
+  document.getElementById("connect").onclick = connectNip07;
+  setEphemeral();
+
+  // ---- récup pubkey créateur (pour le tag p de la zap request) ----
+  let creatorPk = null;
+  fetch("/api/creator").then(r => r.json()).then(j => {
+    try { creatorPk = nip19.decode(j.npub).data; } catch {}
+  });
+
+  // ---- montant ----
   let amount = 210;
   const amts = document.getElementById("amts");
   amts.addEventListener("click", (e) => {
@@ -78,33 +125,51 @@
     [...amts.children].forEach(c => c.classList.remove("sel"));
     el.classList.add("sel"); amount = Number(el.dataset.v);
   });
-  const nameEl = document.getElementById("name");
-  const out = document.getElementById("out");
-  const invEl = document.getElementById("inv");
 
+  // ---- signe une zap request NIP-57 (kind 9734) ----
+  async function signZap() {
+    const comment = document.getElementById("comment").value.trim();
+    const draft = {
+      kind: 9734,
+      created_at: Math.floor(Date.now() / 1000),
+      content: comment,
+      tags: [["relays", ...RELAYS], ["amount", String(amount * 1000)], ...(creatorPk ? [["p", creatorPk]] : [])],
+    };
+    if (me.mode === "nip07") return await window.nostr.signEvent({ ...draft, pubkey: me.pubkey });
+    return finalizeEvent(draft, me.sk);
+  }
+
+  // ---- actions ----
   document.getElementById("pay").onclick = async () => {
+    const out = document.getElementById("out"), invEl = document.getElementById("inv");
     invEl.textContent = "génération de la facture…"; out.classList.add("show");
     try {
-      const r = await fetch(`/api/invoice?amount=${amount}`, { method: "POST" }).then(r => r.json());
+      const zapRequest = await signZap();
+      const r = await fetch("/api/invoice", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ amount, zapRequest }),
+      }).then(r => r.json());
       if (!r.bolt11) throw new Error(r.error || "pas de facture");
       invEl.textContent = r.bolt11;
       QRCode.toCanvas(document.getElementById("qr"), r.bolt11.toUpperCase(), { width: 200, margin: 1 });
     } catch (e) { invEl.textContent = "erreur : " + e.message; }
   };
-  document.getElementById("copy").onclick = () => navigator.clipboard.writeText(invEl.textContent);
 
   document.getElementById("sim").onclick = async () => {
-    const from = nameEl.value.trim() || "anon";
-    await fetch(`/api/simulate?amount=${amount}&from=${encodeURIComponent(from)}`, { method: "POST" });
+    const zapRequest = await signZap();
+    await fetch("/api/simulate", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ amount, zapRequest }),
+    });
   };
 
-  // feedback quand le tip atterrit (depuis le flux temps réel)
+  // ---- feedback temps réel ----
   const toast = document.getElementById("toast");
   const ws = new WebSocket(`ws://${location.host}/ws`);
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
     if (m.type === "tip") {
-      toast.textContent = `⚡ +${m.amount.toLocaleString("fr-FR")} sats reçu !`;
+      toast.textContent = `⚡ +${m.amount.toLocaleString("fr-FR")} sats — ${m.name}`;
       toast.classList.add("show");
       setTimeout(() => toast.classList.remove("show"), 2200);
     }
