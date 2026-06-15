@@ -46,6 +46,10 @@ exactement pareil.
 docker compose up -d   # Node 22 figé, clé persistée sur le volume pumpstr-data
 ```
 
+> ⚡ **Lightning Address** : en prod, `LN_ADDRESS_BASE_URL=https://stream.21pay.org` — un **sous-domaine dédié**,
+> PAS l'apex `21pay.org` qui sert déjà ton LNbits sur `/.well-known/lnurlp`. → l'adresse devient
+> `pay@stream.21pay.org`, payable depuis tout wallet LN / client Nostr (exposé via ton CF Tunnel).
+
 Le node publie son live sur Nostr (NIP-53) et sert overlay/tip/watch. La clé `/data/.creator-key` =
 **npub + wallet du node** : le volume la persiste — **ne le perds pas** (sinon perte du wallet + identité).
 Sur Umbrel : packager via `umbrel-app.yml`. Le portail fédéré se déploie séparément (c'est une
