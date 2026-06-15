@@ -1,0 +1,7 @@
+# Normalise les fins de ligne en LF dans le repo (évite le churn CRLF sous Windows).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.webp binary

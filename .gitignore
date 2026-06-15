@@ -1,0 +1,30 @@
+# Secrets — JAMAIS commit (seed, macaroons, tokens)
+.env
+*.env
+!.env.example
+*.macaroon
+*.seed
+seed.txt
+
+# Dépendances / build
+node_modules/
+dist/
+build/
+.next/
+out/
+
+# Données runtime
+*-data/
+data/
+*.sqlite
+*.db
+
+# OS / éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*

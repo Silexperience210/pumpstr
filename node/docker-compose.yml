@@ -1,0 +1,66 @@
+# Pumpstr node — l'instance auto-hébergeable (Umbrel / Docker).
+# Tout ce qui porte de la valeur ou de l'identité tourne ICI (souverain).
+# La vidéo lourde sort vers un CDN (cf. ADR-005) — seul l'origine est local.
+#
+#   cp .env.example .env  &&  docker compose up -d
+#
+# Statut : scaffold. Les services `api` sont à implémenter ; relay/video/db sont des
+# images upstream prêtes à l'emploi.
+
+name: pumpstr-node
+
+services:
+  # --- Données -------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pumpstr
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: pumpstr
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks: [pumpstr]
+
+  # --- Nostr relay (souveraineté de la couche sociale) ---------------------
+  relay:
+    image: ghcr.io/hoytech/strfry:latest
+    restart: unless-stopped
+    ports:
+      - "${RELAY_PORT:-7777}:7777"
+    volumes:
+      - relay-data:/app/strfry-db
+    networks: [pumpstr]
+
+  # --- Origine vidéo (Owncast) — le CDN se met en pull DEVANT (ADR-005) ----
+  # À l'échelle, ne JAMAIS servir les viewers directement : Bunny/Cloudflare
+  # tirent depuis cette origine. Cf. ARCHITECTURE.md §5.
+  video:
+    image: owncast/owncast:latest
+    restart: unless-stopped
+    ports:
+      - "${VIDEO_HTTP_PORT:-8080}:8080"   # HLS / page (origine pour le CDN)
+      - "${VIDEO_RTMP_PORT:-1935}:1935"   # ingest OBS
+    volumes:
+      - video-data:/app/data
+    networks: [pumpstr]
+
+  # --- Backend Pumpstr : wallet Arkade, LNURL/Lightning Address, ----------
+  #     publisher NIP-53, logique reward/claimable, API du panel.
+  api:
+    build: ./api
+    restart: unless-stopped
+    env_file: .env
+    depends_on: [db, relay]
+    ports:
+      - "${API_PORT:-3000}:3000"
+    networks: [pumpstr]
+
+volumes:
+  db-data:
+  relay-data:
+  video-data:
+
+networks:
+  pumpstr:
+    driver: bridge
