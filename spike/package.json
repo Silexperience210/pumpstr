@@ -1,0 +1,21 @@
+{
+  "name": "pumpstr-spike-arkade",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Throwaway spike: validate Arkade SDK feasibility (RN-relevant) + LN-in (Lightning -> VTXO).",
+  "scripts": {
+    "smoke": "tsx smoke.ts",
+    "lnin": "tsx ln-in.ts",
+    "audit:rn": "tsx audit-rn.ts"
+  },
+  "dependencies": {
+    "@arkade-os/boltz-swap": "latest",
+    "@arkade-os/sdk": "latest"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
