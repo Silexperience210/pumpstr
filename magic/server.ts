@@ -62,7 +62,7 @@ for (const ev of ["unhandledRejection", "uncaughtException"] as const) {
 const PORT = Number(process.env.PORT ?? 4242);
 const ARK_SERVER_URL = process.env.ARK_SERVER_URL ?? "https://mutinynet.arkade.sh";
 const BOLTZ_NETWORK = process.env.BOLTZ_NETWORK ?? "mutinynet";
-const RELAYS = (process.env.NOSTR_RELAYS ?? "wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net")
+const RELAYS = (process.env.NOSTR_RELAYS || "wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net")
   .split(",").map((s) => s.trim()).filter(Boolean);
 const STREAM = {
   d: process.env.STREAM_D ?? "pumpstr-live",
@@ -73,7 +73,7 @@ const STREAM = {
 };
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC = join(HERE, "public");
-const KEY_FILE = join(HERE, ".creator-key");
+const KEY_FILE = process.env.KEY_FILE ?? join(HERE, ".creator-key"); // en conteneur : monté sur un volume
 
 function loadOrCreateKeyHex(): string {
   if (existsSync(KEY_FILE)) return readFileSync(KEY_FILE, "utf8").trim();

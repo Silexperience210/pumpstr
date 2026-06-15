@@ -3,6 +3,11 @@
 L'instance auto-hébergeable. Tout ce qui porte **valeur + identité** tourne ici (souverain) ;
 seule la vidéo lourde sort vers un CDN (cf. `../ARCHITECTURE.md` §5, ADR-005).
 
+> ⚙️ **Statut** : le backend runnable + **dockerisé** du node vit aujourd'hui dans **[`../magic`](../magic)**
+> (`magic/Dockerfile` + `magic/docker-compose.yml`, Node 22, clé persistée sur volume). Pour déployer
+> maintenant : `cd ../magic && docker compose up -d`. Le découpage multi-services ci-dessous (relay / vidéo /
+> api séparés) reste la **décomposition future** vers laquelle `magic/` migrera.
+
 ## Services (`docker-compose.yml`)
 
 | Service | Image | Rôle |

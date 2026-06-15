@@ -40,6 +40,17 @@ exactement pareil.
 | Overlay + page tip temps réel (WebSocket) | Identité Nostr / NIP-53 live (couche suivante) |
 | `simulate` pour démo instantanée | Vidéo (Cloudflare Stream / origine) — l'overlay se pose dessus dans OBS |
 
+## Déployer le node (Docker / Umbrel)
+
+```bash
+docker compose up -d   # Node 22 figé, clé persistée sur le volume pumpstr-data
+```
+
+Le node publie son live sur Nostr (NIP-53) et sert overlay/tip/watch. La clé `/data/.creator-key` =
+**npub + wallet du node** : le volume la persiste — **ne le perds pas** (sinon perte du wallet + identité).
+Sur Umbrel : packager via `../node/umbrel-app.yml`. Le portail fédéré se déploie séparément (c'est une
+lentille Nostr, pas une dépendance du node).
+
 ## Config (env)
 
 | Var | Défaut | Note |

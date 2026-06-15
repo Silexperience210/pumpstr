@@ -1,0 +1,30 @@
+# Pumpstr node — déployable (Docker / Umbrel). Lance le backend du créateur :
+# wallet Arkade self-custodial, tips temps réel, identité Nostr, publication NIP-53, page watch.
+#
+#   docker compose up -d      ->  http://localhost:4242  (overlay / tip / watch)
+#
+# Le portail fédéré (agrégateur) se déploie séparément (c'est une lentille sur le réseau Nostr,
+# pas une dépendance du node) — voir ../portal.
+name: pumpstr-node
+
+services:
+  node:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${PORT:-4242}:4242"
+    environment:
+      PORT: "4242"
+      KEY_FILE: /data/.creator-key        # la clé = npub + wallet du node -> PERSISTÉE sur volume
+      ARK_SERVER_URL: ${ARK_SERVER_URL:-https://mutinynet.arkade.sh}
+      BOLTZ_NETWORK: ${BOLTZ_NETWORK:-mutinynet}
+      NOSTR_RELAYS: ${NOSTR_RELAYS:-}
+      STREAM_URL: ${STREAM_URL:-}
+      CLOUDFLARE_STREAM_ACCOUNT_ID: ${CLOUDFLARE_STREAM_ACCOUNT_ID:-}
+      CLOUDFLARE_STREAM_API_TOKEN: ${CLOUDFLARE_STREAM_API_TOKEN:-}
+      CLOUDFLARE_STREAM_CUSTOMER_CODE: ${CLOUDFLARE_STREAM_CUSTOMER_CODE:-}
+    volumes:
+      - pumpstr-data:/data                 # ⚠️ persiste la clé du node — la perdre = perdre le wallet + l'identité
+
+volumes:
+  pumpstr-data:

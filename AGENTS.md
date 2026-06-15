@@ -16,7 +16,8 @@ self-custodial et fédéré**. Le pump-feel vient de la **vélocité des sats en
 - ✅ **Tranche magique** construite et runnable : `magic/` — vrai wallet créateur Arkade +
   overlay de tips sats temps réel (WebSocket).
 - ⏳ **Spike #2 OUVERT** : `escrowClaimable()` = VTXO réclamable via Arkade Script (rewards async).
-- ⏳ Scaffold seulement : Nostr (NIP-53), vidéo (Cloudflare/origine), node Docker, portail fédéré.
+- ✅ **MVP fédéré complet** dans `magic/` : identité Nostr (tippeur + créateur), NIP-53 publisher + zap
+  receipts (9735), portail fédéré, page watch (vidéo HLS), node **dockerisé** (Node 22, clé sur volume).
 
 ## Principes non négociables
 1. Bitcoin uniquement, **sats only** — pas de token, pas d'AMM, pas de stablecoin.
@@ -102,7 +103,9 @@ ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin 
    **+ vidéo** : page `/watch.html` (HLS via hls.js + tips superposés + flow de tip Nostr ; flux démo Mux si
    non configuré) ; provisionnement **Cloudflare Stream** creds-gated (live input → ingest RTMPS + URL HLS →
    tag `streaming` NIP-53 ; `CLOUDFLARE_STREAM_ACCOUNT_ID`/`_API_TOKEN`/`_CUSTOMER_CODE`).
-   **Reste : packaging node Docker/Umbrel (1-clic)** — le dernier morceau pour la fédération déployable.
+   ✅ **Node dockerisé** : `magic/Dockerfile` + `magic/docker-compose.yml` (Node 22, clé persistée sur volume
+   `/data`) → `cd magic && docker compose up -d`. **MVP fédéré complet.** Prochains : relay Nostr local embarqué
+   dans le node, décomposition multi-services (`node/`), **spike #2** (claimable-VTXO), durcissement + tests.
 
 ## Questions ouvertes (à trancher avec le porteur)
 - Sémantique de « **la review** » : modération-avant-payout (hypothèse retenue) vs curation-to-earn.
