@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pumpstr · tip</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+<style>
+  :root { --gold:#ffb000; --hot:#ff5e00; --neon:#00ffd1; --card:#15131f; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:"Segoe UI",system-ui,sans-serif; color:#fff; min-height:100vh;
+    background:radial-gradient(120% 120% at 50% 0%, #1a1726, #0a0910 60%, #050409);
+    display:flex; align-items:center; justify-content:center; padding:20px; }
+  .card { width:min(420px,94vw); background:var(--card); border:1px solid #2a2640; border-radius:20px;
+    padding:26px; box-shadow:0 24px 80px rgba(0,0,0,.6); }
+  .brand { font-weight:800; font-size:18px; margin-bottom:2px; }
+  .brand b { color:var(--gold); }
+  .sub { color:#8a83a8; font-size:13px; margin-bottom:20px; }
+  .row { display:flex; gap:10px; margin-bottom:14px; }
+  .amt { flex:1; padding:14px 8px; text-align:center; border-radius:12px; cursor:pointer; font-weight:800;
+    background:#1e1b2e; border:1px solid #2f2a47; transition:.15s; }
+  .amt:hover { border-color:var(--gold); }
+  .amt.sel { background:linear-gradient(180deg,#3a2c12,#241a0c); border-color:var(--gold); color:var(--gold); }
+  .amt small { display:block; font-weight:500; color:#9a93b5; font-size:11px; }
+  input { width:100%; padding:13px; border-radius:12px; background:#1e1b2e; border:1px solid #2f2a47; color:#fff; font-size:15px; }
+  input:focus { outline:none; border-color:var(--neon); }
+  .btns { display:flex; gap:10px; margin-top:16px; }
+  button { flex:1; padding:15px; border:0; border-radius:12px; font-weight:800; font-size:15px; cursor:pointer; transition:.15s; }
+  .pay { background:linear-gradient(90deg,var(--hot),var(--gold)); color:#1a1206; }
+  .pay:hover { filter:brightness(1.08); }
+  .sim { background:#1e1b2e; color:var(--neon); border:1px solid #2f2a47; }
+  .sim:hover { border-color:var(--neon); }
+  .out { margin-top:18px; display:none; }
+  .out.show { display:block; }
+  canvas { display:block; margin:0 auto 12px; border-radius:12px; background:#fff; padding:10px; }
+  .inv { font-family:ui-monospace,monospace; font-size:11px; word-break:break-all; color:#b9b2d6;
+    background:#0e0c16; padding:10px; border-radius:10px; max-height:90px; overflow:auto; }
+  .copy { margin-top:8px; width:100%; padding:10px; background:#23203a; color:#fff; border-radius:10px; font-weight:700; }
+  .toast { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(80px);
+    background:linear-gradient(90deg,var(--hot),var(--gold)); color:#1a1206; padding:14px 22px; border-radius:14px;
+    font-weight:800; box-shadow:0 12px 40px rgba(255,120,0,.4); transition:transform .35s cubic-bezier(.2,1.5,.4,1); }
+  .toast.show { transform:translateX(-50%) translateY(0); }
+  .net { margin-top:14px; text-align:center; font-size:11px; color:#6b6588; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">⚡ <b>PUMPSTR</b></div>
+    <div class="sub">Envoie des sats au créateur — en direct.</div>
+
+    <div class="row" id="amts">
+      <div class="amt sel" data-v="210">210<small>sats</small></div>
+      <div class="amt" data-v="2100">2 100<small>sats</small></div>
+      <div class="amt" data-v="21000">21 000<small>sats</small></div>
+    </div>
+    <input id="name" placeholder="ton pseudo (optionnel)" maxlength="24" />
+
+    <div class="btns">
+      <button class="pay" id="pay">⚡ Payer en Lightning</button>
+      <button class="sim" id="sim">▶ Simuler (démo)</button>
+    </div>
+
+    <div class="out" id="out">
+      <canvas id="qr" width="200" height="200"></canvas>
+      <div class="inv" id="inv"></div>
+      <button class="copy" id="copy">copier la facture</button>
+    </div>
+
+    <div class="net">réseau : MutinyNet (signet) · facture payable depuis n'importe quel wallet LN de test</div>
+  </div>
+  <div class="toast" id="toast">⚡ tip reçu !</div>
+
+<script>
+  let amount = 210;
+  const amts = document.getElementById("amts");
+  amts.addEventListener("click", (e) => {
+    const el = e.target.closest(".amt"); if (!el) return;
+    [...amts.children].forEach(c => c.classList.remove("sel"));
+    el.classList.add("sel"); amount = Number(el.dataset.v);
+  });
+  const nameEl = document.getElementById("name");
+  const out = document.getElementById("out");
+  const invEl = document.getElementById("inv");
+
+  document.getElementById("pay").onclick = async () => {
+    invEl.textContent = "génération de la facture…"; out.classList.add("show");
+    try {
+      const r = await fetch(`/api/invoice?amount=${amount}`, { method: "POST" }).then(r => r.json());
+      if (!r.bolt11) throw new Error(r.error || "pas de facture");
+      invEl.textContent = r.bolt11;
+      QRCode.toCanvas(document.getElementById("qr"), r.bolt11.toUpperCase(), { width: 200, margin: 1 });
+    } catch (e) { invEl.textContent = "erreur : " + e.message; }
+  };
+  document.getElementById("copy").onclick = () => navigator.clipboard.writeText(invEl.textContent);
+
+  document.getElementById("sim").onclick = async () => {
+    const from = nameEl.value.trim() || "anon";
+    await fetch(`/api/simulate?amount=${amount}&from=${encodeURIComponent(from)}`, { method: "POST" });
+  };
+
+  // feedback quand le tip atterrit (depuis le flux temps réel)
+  const toast = document.getElementById("toast");
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.type === "tip") {
+      toast.textContent = `⚡ +${m.amount.toLocaleString("fr-FR")} sats reçu !`;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 2200);
+    }
+  };
+</script>
+</body>
+</html>

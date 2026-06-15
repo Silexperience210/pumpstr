@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pumpstr · overlay</title>
+<style>
+  /* Pour OBS : régler la source navigateur en "transparent". En standalone, fond sombre. */
+  :root { --gold: #ffb000; --hot: #ff5e00; --neon: #00ffd1; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; font-family: "Segoe UI", system-ui, sans-serif; }
+  body {
+    background: radial-gradient(120% 120% at 50% 10%, #15131f 0%, #0a0910 55%, #050409 100%);
+    color: #fff; user-select: none;
+  }
+  #flash { position: fixed; inset: 0; pointer-events: none; opacity: 0;
+    background: radial-gradient(60% 50% at 50% 45%, rgba(255,138,0,.35), transparent 70%); }
+  #flash.on { animation: flash .6s ease-out; }
+  @keyframes flash { 0%{opacity:1} 100%{opacity:0} }
+
+  .top { position: fixed; top: 22px; left: 24px; right: 24px; display: flex; justify-content: space-between; align-items: center; }
+  .brand { font-weight: 800; letter-spacing: .5px; font-size: 20px; }
+  .brand b { color: var(--gold); }
+  .live { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; color: #ff5b5b; }
+  .live .dot { width: 10px; height: 10px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 12px #ff3b3b; animation: pulse 1.3s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .addr { font-family: ui-monospace, monospace; font-size: 12px; color: #9a93b5; }
+
+  .stage { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .label { text-transform: uppercase; letter-spacing: 6px; font-size: 14px; color: #8a83a8; margin-bottom: 6px; }
+  .counter {
+    font-family: ui-monospace, "Cascadia Code", monospace; font-weight: 800;
+    font-size: clamp(64px, 16vw, 200px); line-height: 1;
+    color: var(--gold);
+    text-shadow: 0 0 18px rgba(255,176,0,.55), 0 0 60px rgba(255,94,0,.35);
+    transition: transform .18s cubic-bezier(.2,1.6,.4,1);
+  }
+  .counter.pop { transform: scale(1.12); }
+  .unit { font-size: clamp(16px,3vw,28px); letter-spacing: 4px; color: #ffd47a; margin-top: 10px; }
+
+  .hype { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); width: min(560px, 70vw); height: 8px;
+    background: rgba(255,255,255,.08); border-radius: 99px; overflow: hidden; }
+  .hype > i { display: block; height: 100%; width: 0%; border-radius: 99px;
+    background: linear-gradient(90deg, var(--hot), var(--gold), var(--neon)); transition: width .5s ease; box-shadow: 0 0 14px var(--gold); }
+
+  .ticker { position: fixed; bottom: 26px; left: 0; right: 0; text-align: center; font-size: 15px; color: #b9b2d6; height: 22px; }
+  .ticker b { color: var(--gold); }
+
+  /* tips qui montent */
+  .float { position: fixed; left: 50%; bottom: 30%; transform: translateX(-50%);
+    font-weight: 800; white-space: nowrap; pointer-events: none;
+    animation: rise 2.1s cubic-bezier(.2,.8,.2,1) forwards; }
+  .float .amt { font-size: 46px; color: #fff; text-shadow: 0 0 22px var(--gold); }
+  .float .amt .s { color: var(--gold); }
+  .float .who { display: block; text-align: center; font-size: 16px; color: var(--neon); margin-top: 2px; }
+  @keyframes rise { 0%{opacity:0; transform: translate(-50%,20px) scale(.8)} 12%{opacity:1; transform:translate(-50%,0) scale(1)} 100%{opacity:0; transform: translate(-50%,-260px) scale(1.05)} }
+
+  .coin { position: fixed; bottom: 34%; font-size: 26px; pointer-events: none; animation: burst 1.4s ease-out forwards; }
+  @keyframes burst { 0%{opacity:0; transform: translateY(0) scale(.5)} 15%{opacity:1} 100%{opacity:0; transform: translate(var(--dx), -180px) rotate(var(--rot)) scale(1.1)} }
+</style>
+</head>
+<body>
+  <div id="flash"></div>
+  <div class="top">
+    <div class="brand">⚡ <b>PUMPSTR</b></div>
+    <div class="live"><span class="dot"></span> LIVE</div>
+    <div class="addr" id="addr">connexion…</div>
+  </div>
+
+  <div class="stage">
+    <div class="label">sats ce live</div>
+    <div class="counter" id="counter">0</div>
+    <div class="unit">⚡ satoshi</div>
+  </div>
+
+  <div class="hype"><i id="hype"></i></div>
+  <div class="ticker" id="ticker">en attente du premier tip…</div>
+
+<script>
+  const counterEl = document.getElementById("counter");
+  const addrEl = document.getElementById("addr");
+  const tickerEl = document.getElementById("ticker");
+  const hypeEl = document.getElementById("hype");
+  const flashEl = document.getElementById("flash");
+
+  let total = 0, shown = 0, comboTimer = null, combo = 0;
+  const fmt = (n) => n.toLocaleString("fr-FR");
+
+  function animateCount() {
+    const step = () => {
+      const diff = total - shown;
+      if (Math.abs(diff) < 1) { shown = total; counterEl.textContent = fmt(total); return; }
+      shown += diff * 0.18;
+      counterEl.textContent = fmt(Math.round(shown));
+      requestAnimationFrame(step);
+    };
+    step();
+  }
+
+  function floatTip(amount, who) {
+    const f = document.createElement("div");
+    f.className = "float";
+    f.innerHTML = `<div class="amt">+${fmt(amount)} <span class="s">⚡</span></div><span class="who">${who}</span>`;
+    document.body.appendChild(f);
+    setTimeout(() => f.remove(), 2200);
+    const n = Math.min(3 + Math.round(amount / 1000), 14);
+    for (let i = 0; i < n; i++) {
+      const c = document.createElement("div");
+      c.className = "coin"; c.textContent = Math.random() > .5 ? "🪙" : "⚡";
+      c.style.left = (50 + (Math.random() * 30 - 15)) + "vw";
+      c.style.setProperty("--dx", (Math.random() * 240 - 120) + "px");
+      c.style.setProperty("--rot", (Math.random() * 540 - 270) + "deg");
+      c.style.animationDelay = (Math.random() * .15) + "s";
+      document.body.appendChild(c);
+      setTimeout(() => c.remove(), 1500);
+    }
+  }
+
+  function onTip(amount, from) {
+    total += amount;
+    animateCount();
+    counterEl.classList.add("pop");
+    setTimeout(() => counterEl.classList.remove("pop"), 200);
+    flashEl.classList.remove("on"); void flashEl.offsetWidth; flashEl.classList.add("on");
+    floatTip(amount, from || "anon");
+    tickerEl.innerHTML = `dernier tip : <b>+${fmt(amount)} sats</b> par ${from || "anon"}`;
+    combo += amount;
+    hypeEl.style.width = Math.min(100, (combo / 21000) * 100) + "%";
+    clearTimeout(comboTimer);
+    comboTimer = setTimeout(() => { combo = 0; hypeEl.style.width = "0%"; }, 6000);
+  }
+
+  function connect() {
+    const ws = new WebSocket(`ws://${location.host}/ws`);
+    ws.onmessage = (ev) => {
+      const m = JSON.parse(ev.data);
+      if (m.type === "hello") {
+        addrEl.textContent = m.address ? m.address.slice(0, 12) + "…" + m.address.slice(-6) : "";
+      } else if (m.type === "tip") {
+        onTip(Number(m.amount), m.from);
+      }
+    };
+    ws.onclose = () => setTimeout(connect, 1500);
+  }
+  connect();
+</script>
+</body>
+</html>
