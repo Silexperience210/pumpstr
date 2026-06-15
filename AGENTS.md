@@ -45,7 +45,7 @@ Pumpstr/
 ├── node/                ← scaffold de l'instance auto-hébergeable (Docker/Umbrel) — pas encore implémenté
 ├── portal/              ← portail fédéré : index.html = client Nostr (kind:30311 #t=pumpstr), servi à /portal
 ├── spike/               ← Spike A : preuve Arkade RN + LN-in (smoke.ts, ln-in.ts, SPIKE-RESULT.md)
-└── magic/               ← LA TRANCHE MAGIQUE, runnable : server.ts + public/overlay.html + public/tip.html
+└── magic/               ← LA TRANCHE MAGIQUE, runnable : server.ts + public/{overlay,tip,watch}.html (sert aussi /portal)
 ```
 
 ## ⚠️ Faits vérifiés & pièges (issus du spike — NON dérivables, critiques)
@@ -98,8 +98,11 @@ ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin 
 3. **Lightning Address (LUD-16)** `pseudo@host` adossée au wallet (`.well-known/lnurlp/...`).
 4. ✅ **Fait** — créateur 1 clé → npub + wallet ; **publisher NIP-53** (`kind:30311`, signé clé créateur,
    publié + **round-trip relais vérifié**) ; **zap receipts NIP-57 (9735)** publiés sur paiement LN réglé.
-5. ✅ **Portail fédéré** construit (`portal/index.html` : client Nostr lisant `kind:30311 #t=pumpstr`,
-   servi à `/portal`). Reste : **vidéo** sous l'overlay (Cloudflare Stream / origine) + **packaging node Docker/Umbrel**.
+5. ✅ **Portail fédéré** (`portal/index.html`, client Nostr `kind:30311 #t=pumpstr`, servi à `/portal`)
+   **+ vidéo** : page `/watch.html` (HLS via hls.js + tips superposés + flow de tip Nostr ; flux démo Mux si
+   non configuré) ; provisionnement **Cloudflare Stream** creds-gated (live input → ingest RTMPS + URL HLS →
+   tag `streaming` NIP-53 ; `CLOUDFLARE_STREAM_ACCOUNT_ID`/`_API_TOKEN`/`_CUSTOMER_CODE`).
+   **Reste : packaging node Docker/Umbrel (1-clic)** — le dernier morceau pour la fédération déployable.
 
 ## Questions ouvertes (à trancher avec le porteur)
 - Sémantique de « **la review** » : modération-avant-payout (hypothèse retenue) vs curation-to-earn.

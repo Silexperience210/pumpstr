@@ -16,8 +16,10 @@ npm start            # Node 22 LTS recommandé ; réseau réel requis (opérateu
 ```
 
 Puis ouvre :
-- **Overlay** (à mettre en *source navigateur* dans OBS, par-dessus ton live) : http://localhost:4242/overlay.html
-- **Page tip** (la surface viewer) : http://localhost:4242/tip.html
+- **Watch** (l'expérience viewer : vidéo + tips superposés + tip Nostr) : http://localhost:4242/watch.html
+- **Portail fédéré** (la grille des lives, agrégée via Nostr) : http://localhost:4242/portal
+- **Overlay** (source navigateur OBS, par-dessus ton live) : http://localhost:4242/overlay.html
+- **Page tip** (surface tip standalone) : http://localhost:4242/tip.html
 
 ## Voir la magie en 5 secondes
 
@@ -33,7 +35,7 @@ exactement pareil.
 
 | Réel | Stub / à venir |
 |---|---|
-| Identité Nostr du tippeur (zap NIP-57) + **live NIP-53 publié** + **zap receipts 9735** + npub créateur (même clé) + portail fédéré | **Vidéo** sous l'overlay (Cloudflare/origine) ; packaging node Docker/Umbrel |
+| Identité Nostr tippeur (zap NIP-57) + live NIP-53 + zap receipts 9735 + npub créateur + portail fédéré + **page watch (vidéo HLS + tips superposés)** + provision Cloudflare (creds-gated) | **Packaging node Docker/Umbrel** (1-clic) ; vidéo réelle = brancher tes creds CF (sinon flux démo Mux) |
 | Facture LN-in via Boltz (`createLightningInvoice`) | Pas encore de Lightning Address `user@host` (LUD-16) — facture à la demande |
 | Overlay + page tip temps réel (WebSocket) | Identité Nostr / NIP-53 live (couche suivante) |
 | `simulate` pour démo instantanée | Vidéo (Cloudflare Stream / origine) — l'overlay se pose dessus dans OBS |
@@ -47,7 +49,10 @@ exactement pareil.
 | `BOLTZ_NETWORK` | `mutinynet` | `bitcoin` \| `mutinynet` \| `regtest` |
 | `NOSTR_RELAYS` | damus, nos.lol, primal | relais (profil tippeur + publication NIP-53/9735) |
 | `STREAM_TITLE` / `STREAM_SUMMARY` | défauts | métadonnées du live NIP-53 (`kind:30311`) |
-| `STREAM_URL` / `STREAM_IMAGE` | vide | URL HLS + miniature du live (vidéo = couche suivante) |
+| `STREAM_URL` / `STREAM_IMAGE` | vide | URL HLS + miniature ; vide → `/watch` utilise un flux démo |
+| `CLOUDFLARE_STREAM_ACCOUNT_ID` | — | active le provisionnement d'un live input Cloudflare |
+| `CLOUDFLARE_STREAM_API_TOKEN` | — | token API Cloudflare Stream |
+| `CLOUDFLARE_STREAM_CUSTOMER_CODE` | — | sous-domaine `customer-<CODE>` pour l'URL HLS de lecture |
 
 La clé privée du wallet créateur est générée au 1er boot dans `.creator-key` (gitignoré).
 En RN, le stockage passera par `./adapters/asyncStorage` (ici : polyfill `fake-indexeddb` pour Node).

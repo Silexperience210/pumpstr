@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pumpstr · watch</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+<style>
+  :root { --gold:#ffb000; --hot:#ff5e00; --neon:#00ffd1; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { height:100%; overflow:hidden; font-family:"Segoe UI",system-ui,sans-serif; color:#fff; background:#050409; }
+  #vid { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; background:#0a0910; }
+  .scrim { position:fixed; inset:0; pointer-events:none; background:linear-gradient(180deg, rgba(5,4,9,.55) 0%, transparent 22%, transparent 60%, rgba(5,4,9,.85) 100%); }
+
+  .top { position:fixed; top:16px; left:18px; right:18px; display:flex; align-items:center; gap:12px; }
+  .brand { font-weight:800; font-size:18px; } .brand b { color:var(--gold); }
+  .live { display:flex; align-items:center; gap:7px; font-weight:800; font-size:13px; color:#ff5b5b; }
+  .live .dot { width:9px; height:9px; border-radius:50%; background:#ff3b3b; box-shadow:0 0 10px #ff3b3b; animation:pulse 1.3s infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
+  .demo { font-size:11px; font-weight:800; color:#1a1206; background:var(--gold); padding:2px 8px; border-radius:99px; }
+  .host { margin-left:auto; display:flex; align-items:center; gap:8px; font-size:13px; color:#cfc9e6; }
+  .host img { width:28px; height:28px; border-radius:50%; background:#0e0c16; }
+  .count { font-family:ui-monospace,monospace; font-weight:800; color:var(--gold); text-shadow:0 0 12px rgba(255,176,0,.5); }
+
+  /* tips qui montent */
+  .float { position:fixed; left:50%; bottom:160px; transform:translateX(-50%); text-align:center; pointer-events:none;
+    animation:rise 2.3s cubic-bezier(.2,.8,.2,1) forwards; }
+  .float img { width:46px; height:46px; border-radius:50%; display:block; margin:0 auto 5px; border:2px solid var(--gold); box-shadow:0 0 16px var(--gold); background:#0e0c16; }
+  .float .amt { font-size:38px; font-weight:800; text-shadow:0 0 20px var(--gold); }
+  .float .amt .s { color:var(--gold); }
+  .float .who { font-size:14px; color:var(--neon); font-weight:700; }
+  .float .cmt { font-size:13px; color:#e8e2ff; }
+  @keyframes rise { 0%{opacity:0; transform:translate(-50%,20px) scale(.85)} 12%{opacity:1; transform:translate(-50%,0) scale(1)} 100%{opacity:0; transform:translate(-50%,-230px) scale(1.05)} }
+
+  /* barre de tip */
+  .bar { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); width:min(640px,94vw);
+    background:rgba(21,19,31,.82); backdrop-filter:blur(10px); border:1px solid #2f2a47; border-radius:18px; padding:12px; }
+  .idrow { display:flex; align-items:center; gap:9px; margin-bottom:10px; }
+  .idrow img { width:26px; height:26px; border-radius:50%; background:#0e0c16; }
+  .idrow b { font-size:13px; } .idrow small { color:#8a83a8; font-size:11px; }
+  .idrow button { margin-left:auto; background:#23203a; color:var(--neon); border:1px solid #2f2a47; border-radius:9px; padding:6px 9px; font-weight:700; font-size:12px; cursor:pointer; }
+  .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .amt { padding:9px 12px; border-radius:10px; cursor:pointer; font-weight:800; background:#1e1b2e; border:1px solid #2f2a47; }
+  .amt.sel { background:linear-gradient(180deg,#3a2c12,#241a0c); border-color:var(--gold); color:var(--gold); }
+  .controls input { flex:1; min-width:120px; padding:10px; border-radius:10px; background:#1e1b2e; border:1px solid #2f2a47; color:#fff; }
+  .controls input:focus { outline:none; border-color:var(--neon); }
+  .controls button.act { padding:11px 14px; border:0; border-radius:10px; font-weight:800; cursor:pointer; }
+  .pay { background:linear-gradient(90deg,var(--hot),var(--gold)); color:#1a1206; }
+  .sim { background:#1e1b2e; color:var(--neon); border:1px solid #2f2a47; }
+
+  #unmute { position:fixed; bottom:130px; right:18px; background:rgba(0,0,0,.6); color:#fff; border:1px solid #3a3550; border-radius:99px; padding:9px 14px; font-weight:700; cursor:pointer; }
+  .modal { position:fixed; inset:0; background:rgba(5,4,9,.8); display:none; align-items:center; justify-content:center; z-index:9; }
+  .modal.show { display:flex; }
+  .modal .box { background:#15131f; border:1px solid #2f2a47; border-radius:18px; padding:22px; text-align:center; width:min(320px,92vw); }
+  .modal canvas { background:#fff; border-radius:12px; padding:10px; }
+  .modal .inv { font-family:ui-monospace,monospace; font-size:10px; word-break:break-all; color:#b9b2d6; margin-top:10px; max-height:70px; overflow:auto; }
+  .modal .x { margin-top:12px; width:100%; padding:10px; background:#23203a; color:#fff; border:0; border-radius:10px; font-weight:700; cursor:pointer; }
+</style>
+</head>
+<body>
+  <video id="vid" autoplay muted playsinline></video>
+  <div class="scrim"></div>
+
+  <div class="top">
+    <div class="brand">⚡ <b>PUMPSTR</b></div>
+    <div class="live"><span class="dot"></span> LIVE</div>
+    <span class="demo" id="demo" style="display:none">flux démo</span>
+    <div class="host"><span class="count" id="count">0</span> sats · <img id="hostAva" alt="" /> <span id="hostName">…</span></div>
+  </div>
+
+  <button id="unmute">🔊 activer le son</button>
+
+  <div class="bar">
+    <div class="idrow">
+      <img id="idAva" alt="" /><div><b id="idName">…</b><br><small id="idNpub"></small></div>
+      <button id="connect">⚡ Connecter Nostr</button>
+    </div>
+    <div class="controls">
+      <div class="amt sel" data-v="210">210</div>
+      <div class="amt" data-v="2100">2 100</div>
+      <div class="amt" data-v="21000">21 000</div>
+      <input id="comment" placeholder="un mot ?" maxlength="140" />
+      <button class="act sim" id="sim">▶ Simuler</button>
+      <button class="act pay" id="pay">⚡ Tip</button>
+    </div>
+  </div>
+
+  <div class="modal" id="modal"><div class="box">
+    <canvas id="qr" width="220" height="220"></canvas>
+    <div class="inv" id="inv"></div>
+    <button class="x" id="close">fermer</button>
+  </div></div>
+
+<script type="module">
+  import Hls from "https://cdn.jsdelivr.net/npm/hls.js@1/+esm";
+  import { generateSecretKey, getPublicKey, finalizeEvent, nip19 } from "https://esm.sh/nostr-tools@2";
+
+  const RELAYS = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"];
+  const DEMO_HLS = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
+  const dicebear = (s) => `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(s || "x")}`;
+  const esc = (s) => String(s ?? "").replace(/[<>&]/g, (c) => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;" }[c]));
+  const fmt = (n) => n.toLocaleString("fr-FR");
+
+  // ---- vidéo ----
+  const vid = document.getElementById("vid");
+  const { url, demo } = await fetch("/api/stream").then((r) => r.json()).catch(() => ({}));
+  const src = url || DEMO_HLS;
+  if (!url) document.getElementById("demo").style.display = "";
+  if (vid.canPlayType("application/vnd.apple.mpegurl")) vid.src = src;
+  else if (Hls.isSupported()) { const h = new Hls(); h.loadSource(src); h.attachMedia(vid); }
+  else vid.src = src;
+  document.getElementById("unmute").onclick = (e) => { vid.muted = false; vid.play(); e.target.style.display = "none"; };
+
+  // ---- créateur ----
+  let creatorPk = null;
+  fetch("/api/creator").then((r) => r.json()).then((j) => {
+    try { creatorPk = nip19.decode(j.npub).data; } catch {}
+    document.getElementById("hostName").textContent = j.npub ? j.npub.slice(0, 12) + "…" : "créateur";
+    document.getElementById("hostAva").src = dicebear(creatorPk || "host");
+  });
+
+  // ---- identité tippeur (Nostr) ----
+  let me = null;
+  function paintId(name, npub, ava) {
+    document.getElementById("idName").textContent = name;
+    document.getElementById("idNpub").textContent = npub;
+    document.getElementById("idAva").src = ava;
+  }
+  function setEph() { const sk = generateSecretKey(); const pk = getPublicKey(sk); me = { mode: "eph", pk, sk }; paintId("anon éphémère", nip19.npubEncode(pk), dicebear(pk)); }
+  document.getElementById("connect").onclick = async () => {
+    if (!window.nostr) return alert("Pas d'extension Nostr (NIP-07). Tu restes éphémère.");
+    try { const pk = await window.nostr.getPublicKey(); me = { mode: "nip07", pk }; paintId("Nostr connecté", nip19.npubEncode(pk), dicebear(pk)); } catch {}
+  };
+  setEph();
+
+  let amount = 210;
+  const ctrl = document.querySelector(".controls");
+  ctrl.addEventListener("click", (e) => { const el = e.target.closest(".amt"); if (!el) return;
+    document.querySelectorAll(".amt").forEach((c) => c.classList.remove("sel")); el.classList.add("sel"); amount = Number(el.dataset.v); });
+
+  async function signZap() {
+    const comment = document.getElementById("comment").value.trim();
+    const draft = { kind: 9734, created_at: Math.floor(Date.now() / 1000), content: comment,
+      tags: [["relays", ...RELAYS], ["amount", String(amount * 1000)], ...(creatorPk ? [["p", creatorPk]] : [])] };
+    return me.mode === "nip07" ? await window.nostr.signEvent({ ...draft, pubkey: me.pk }) : finalizeEvent(draft, me.sk);
+  }
+  document.getElementById("sim").onclick = async () => {
+    await fetch("/api/simulate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ amount, zapRequest: await signZap() }) });
+  };
+  const modal = document.getElementById("modal");
+  document.getElementById("pay").onclick = async () => {
+    const inv = document.getElementById("inv"); inv.textContent = "facture…"; modal.classList.add("show");
+    try {
+      const r = await fetch("/api/invoice", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ amount, zapRequest: await signZap() }) }).then((r) => r.json());
+      if (!r.bolt11) throw new Error(r.error || "pas de facture");
+      inv.textContent = r.bolt11; QRCode.toCanvas(document.getElementById("qr"), r.bolt11.toUpperCase(), { width: 220, margin: 1 });
+    } catch (e) { inv.textContent = "erreur : " + e.message; }
+  };
+  document.getElementById("close").onclick = () => modal.classList.remove("show");
+
+  // ---- tips temps réel superposés ----
+  let total = 0, shown = 0;
+  const countEl = document.getElementById("count");
+  function animate() { const step = () => { const d = total - shown; if (Math.abs(d) < 1) { shown = total; countEl.textContent = fmt(total); return; } shown += d * 0.2; countEl.textContent = fmt(Math.round(shown)); requestAnimationFrame(step); }; step(); }
+  function floatTip(t) {
+    total += t.amount; animate();
+    const f = document.createElement("div"); f.className = "float";
+    const ava = t.picture || dicebear(t.pubkey || t.name);
+    f.innerHTML = `<img src="${esc(ava)}" onerror="this.src='${dicebear(t.name)}'" /><div class="amt">+${fmt(t.amount)} <span class="s">⚡</span></div><div class="who">${esc(t.name || "anon")}</div>${t.comment ? `<div class="cmt">“${esc(t.comment)}”</div>` : ""}`;
+    document.body.appendChild(f); setTimeout(() => f.remove(), 2400);
+  }
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === "tip") floatTip({ amount: Number(m.amount), name: m.name, picture: m.picture, comment: m.comment, pubkey: m.pubkey }); };
+</script>
+</body>
+</html>

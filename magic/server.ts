@@ -212,6 +212,37 @@ async function publishZapReceipt(zapRequest: any, bolt11: string, amountSats: nu
   }
 }
 
+// ---------- Vidéo : provisionnement Cloudflare Stream (creds-gated) ----------
+// Si les creds CF sont présents -> crée un live input (ingest RTMPS pour OBS) + construit
+// l'URL HLS de lecture, et la pousse dans le tag `streaming` du NIP-53. Sinon STREAM.url reste
+// vide et la page /watch tombe sur un flux de démo. API: developers.cloudflare.com/stream/stream-live
+async function provisionCloudflareLive(): Promise<void> {
+  const acct = process.env.CLOUDFLARE_STREAM_ACCOUNT_ID;
+  const token = process.env.CLOUDFLARE_STREAM_API_TOKEN;
+  const code = process.env.CLOUDFLARE_STREAM_CUSTOMER_CODE; // sous-domaine customer-<CODE>
+  if (STREAM.url || !acct || !token) return; // déjà une URL, ou pas de creds -> on saute
+  try {
+    const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${acct}/stream/live_inputs`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ meta: { name: `pumpstr-${creatorPubkey.slice(0, 8)}` }, recording: { mode: "automatic" } }),
+    });
+    const j: any = await r.json();
+    const li = j?.result ?? j;
+    if (!li?.uid) throw new Error(j?.errors?.[0]?.message ?? "réponse live input invalide");
+    console.log(`[video] Cloudflare live input créé — ingest RTMPS pour OBS :`);
+    console.log(`        ${li.rtmps?.url}  (clé: ${li.rtmps?.streamKey})`);
+    if (code) {
+      STREAM.url = `https://customer-${code}.cloudflarestream.com/${li.uid}/manifest/video.m3u8`;
+      console.log(`        lecture HLS: ${STREAM.url}`);
+    } else {
+      console.log(`        ⚠️ définis CLOUDFLARE_STREAM_CUSTOMER_CODE (ou STREAM_URL) pour l'URL de lecture`);
+    }
+  } catch (e: any) {
+    console.error("[video] provisionnement Cloudflare échoué:", e?.message ?? e);
+  }
+}
+
 // ---------- détection temps réel (SDK) + dédup des tips identifiés ----------
 // Les VTXO claimés par facture (waitAndClaim) sont déjà comptés AVEC identité ; on les
 // dédupe ici par txid pour que la subscription ne les recompte pas en "anon".
@@ -243,6 +274,8 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
+await provisionCloudflareLive(); // creds CF -> live input + URL HLS ; sinon /watch utilise un flux démo
+
 // ---------- HTTP ----------
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml",
@@ -264,6 +297,10 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/api/creator") {
     return sendJson(res, 200, { address: creatorAddress, npub: creatorNpub, recentTips });
+  }
+
+  if (url.pathname === "/api/stream") {
+    return sendJson(res, 200, { url: STREAM.url, demo: !STREAM.url, title: STREAM.title });
   }
 
   if (url.pathname === "/api/invoice" && req.method === "POST") {
