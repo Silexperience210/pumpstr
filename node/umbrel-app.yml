@@ -1,28 +1,25 @@
-# Manifest Umbrel community app (sketch). Permet le déploiement 1-clic du node
-# Pumpstr sur un Umbrel. À finaliser quand l'image `api` est publiée.
+# Manifest Umbrel community app — déploiement 1-clic du node Pumpstr.
 # Réf format : github.com/getumbrel/umbrel-apps
-
 manifestVersion: 1
 id: pumpstr
 name: Pumpstr
 tagline: Streaming façon pump.fun sur Bitcoin — self-custodial & fédéré
 category: Bitcoin
-version: "0.0.1"
-port: 3000
+version: "0.1.0"
+port: 4242
 description: >-
-  Ton node Pumpstr : wallet Arkade self-custodial, Lightning Address, origine
-  vidéo et publisher Nostr (NIP-53). Reçois des sats en direct, garde tes fonds,
+  Ton node Pumpstr : wallet Arkade self-custodial, identité Nostr, tips sats en
+  direct, publication NIP-53 du live, page watch. Reçois des sats, garde tes fonds,
   agrège-toi au réseau fédéré via le portail de ton choix.
 developer: Pumpstr
-website: https://pumpstr.example
-repo: ""
-support: ""
+website: https://github.com/Silexperience210/pumpstr
+repo: https://github.com/Silexperience210/pumpstr
+support: https://github.com/Silexperience210/pumpstr/issues
 gallery: []
-releaseNotes: Scaffold initial.
-dependencies:
-  - lightning        # gateway LN-in (LND) pour les tips Lightning externes
+releaseNotes: MVP fédéré — wallet Arkade, tips Nostr temps réel, NIP-53, page watch.
+dependencies: []
 path: ""
 defaultUsername: ""
 torOnly: false
-submitter: ""
+submitter: Silexperience210
 submission: ""

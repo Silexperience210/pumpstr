@@ -1,5 +1,5 @@
 /**
- * Pumpstr — la tranche magique (backend).
+ * Pumpstr — le node (backend).
  *
  * Tient un VRAI wallet créateur Arkade (validé au spike A) ET dérive l'identité Nostr
  * du créateur de LA MÊME clé (ADR-004 : 1 seed -> npub + wallet). Expose :
@@ -367,7 +367,7 @@ wss.on("connection", (ws) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n  🔥 PUMPSTR magic slice en ligne :`);
+  console.log(`\n  🔥 PUMPSTR node en ligne :`);
   console.log(`     overlay (source OBS) : http://localhost:${PORT}/overlay.html`);
   console.log(`     page tip (viewer)    : http://localhost:${PORT}/tip.html`);
   console.log(`     portail fédéré       : http://localhost:${PORT}/portal\n`);

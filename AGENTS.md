@@ -13,10 +13,10 @@ self-custodial et fédéré**. Le pump-feel vient de la **vélocité des sats en
 - ✅ Architecture **verrouillée** (`ARCHITECTURE.md`, `DECISIONS.md`).
 - ✅ **Spike A — rail Arkade (React Native + LN-in) = VERT**, validé avec du code qui tourne
   contre l'opérateur live. Détails + preuves : `spike/SPIKE-RESULT.md`.
-- ✅ **Tranche magique** construite et runnable : `magic/` — vrai wallet créateur Arkade +
+- ✅ **Node** construit et runnable : `node/` — vrai wallet créateur Arkade +
   overlay de tips sats temps réel (WebSocket).
 - ⏳ **Spike #2 OUVERT** : `escrowClaimable()` = VTXO réclamable via Arkade Script (rewards async).
-- ✅ **MVP fédéré complet** dans `magic/` : identité Nostr (tippeur + créateur), NIP-53 publisher + zap
+- ✅ **MVP fédéré complet** dans `node/` : identité Nostr (tippeur + créateur), NIP-53 publisher + zap
   receipts (9735), portail fédéré, page watch (vidéo HLS), node **dockerisé** (Node 22, clé sur volume).
 
 ## Principes non négociables
@@ -43,10 +43,9 @@ Pumpstr/
 ├── DECISIONS.md         ← les 7 ADR (le pourquoi)
 ├── README.md            ← pitch + quickstart
 ├── packages/payment-rail/  ← interface PaymentRail VERROUILLÉE (défaut : Arkade)
-├── node/                ← scaffold de l'instance auto-hébergeable (Docker/Umbrel) — pas encore implémenté
+├── node/                ← LE NODE runnable (Docker/Umbrel) : server.ts + public/{overlay,tip,watch}.html (sert /portal)
 ├── portal/              ← portail fédéré : index.html = client Nostr (kind:30311 #t=pumpstr), servi à /portal
-├── spike/               ← Spike A : preuve Arkade RN + LN-in (smoke.ts, ln-in.ts, SPIKE-RESULT.md)
-└── magic/               ← LA TRANCHE MAGIQUE, runnable : server.ts + public/{overlay,tip,watch}.html (sert aussi /portal)
+└── spike/               ← Spike A : preuve Arkade RN + LN-in (smoke.ts, ln-in.ts, SPIKE-RESULT.md)
 ```
 
 ## ⚠️ Faits vérifiés & pièges (issus du spike — NON dérivables, critiques)
@@ -73,13 +72,13 @@ Pumpstr/
   `.value` (sats). Compter le **net = Σnew − Σspent** pour ignorer renouvellements/change. ⚠️ démarre aussi un
   **watcher on-chain** (Electrum WS + Esplora) qui, sur mutinynet, boucle en reconnexion **ET peut throw**
   (fetch/TLS, p.ex. `CERT_NOT_YET_VALID`) → **plante le process sans garde**. Off-chain non affecté ;
-  `magic/server.ts` filtre le bruit + ajoute un guard `uncaughtException`/`unhandledRejection`. API trouvée par
+  `node/server.ts` filtre le bruit + ajoute un guard `uncaughtException`/`unhandledRejection`. API trouvée par
   **introspection runtime** (types bundlés en chunks).
 
 ## Comment lancer
 ```bash
-# La tranche magique (le moment qui vend le produit)
-cd magic && npm install && npm start
+# Le node (lancer le backend)
+cd node && npm install && npm start
 #   overlay (source OBS) : http://localhost:4242/overlay.html
 #   page tip (viewer)    : http://localhost:4242/tip.html
 #   démo instantanée     : bouton "▶ Simuler" sur la page tip
@@ -103,8 +102,8 @@ ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin 
    **+ vidéo** : page `/watch.html` (HLS via hls.js + tips superposés + flow de tip Nostr ; flux démo Mux si
    non configuré) ; provisionnement **Cloudflare Stream** creds-gated (live input → ingest RTMPS + URL HLS →
    tag `streaming` NIP-53 ; `CLOUDFLARE_STREAM_ACCOUNT_ID`/`_API_TOKEN`/`_CUSTOMER_CODE`).
-   ✅ **Node dockerisé** : `magic/Dockerfile` + `magic/docker-compose.yml` (Node 22, clé persistée sur volume
-   `/data`) → `cd magic && docker compose up -d`. **MVP fédéré complet.** Prochains : relay Nostr local embarqué
+   ✅ **Node dockerisé** : `node/Dockerfile` + `node/docker-compose.yml` (Node 22, clé persistée sur volume
+   `/data`) → `cd node && docker compose up -d`. **MVP fédéré complet.** Prochains : relay Nostr local embarqué
    dans le node, décomposition multi-services (`node/`), **spike #2** (claimable-VTXO), durcissement + tests.
 
 ## Questions ouvertes (à trancher avec le porteur)

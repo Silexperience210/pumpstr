@@ -1,9 +1,9 @@
 {
-  "name": "pumpstr-magic",
+  "name": "pumpstr-node",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Pumpstr — la tranche magique : wallet créateur Arkade + overlay de tips sats temps réel.",
+  "description": "Pumpstr node — wallet Arkade + tips temps réel + Nostr/NIP-53 + watch.",
   "license": "AGPL-3.0-only",
   "scripts": {
     "start": "tsx server.ts",

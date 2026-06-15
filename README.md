@@ -22,7 +22,7 @@ agrège tous les lives via Nostr. Pas de token, pas d'AMM, pas de custody.
 | **`portal/`** | Le « site » qui agrège tous les lives : client Nostr + indexer. **Lentille remplaçable, jamais un chokepoint.** | Cloud / Umbrel / n'importe où |
 | **`packages/payment-rail/`** | L'abstraction money — garde Pumpstr agnostique du rail (défaut : Arkade) | Lib partagée |
 
-## Le premier build (la tranche magique)
+## Le premier build (le moment magique)
 
 > Compte (1 seed → Nostr + Arkade + LN address) → 1 live → **tip in-app + overlay sats temps réel.**
 

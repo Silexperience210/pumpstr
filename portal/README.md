@@ -3,8 +3,8 @@
 Le « site » qui agrège tous les lives. **Un client Nostr + un indexer. Jamais un chokepoint.**
 
 > ✅ **Implémenté** : [`index.html`](./index.html) — client Nostr (browser) qui s'abonne à `kind:30311 #t=pumpstr`
-> et rend la grille des lives (titre, hôte résolu kind-0, statut, viewers). Servi par le node `magic/` à **`/portal`**.
-> Démo : `cd magic && npm start` puis ouvre http://localhost:4242/portal (le live du node y apparaît).
+> et rend la grille des lives (titre, hôte résolu kind-0, statut, viewers). Servi par le node à **`/portal`**.
+> Démo : `cd node && npm start` puis ouvre http://localhost:4242/portal (le live du node y apparaît).
 
 ## Principe (ADR-003)
 
