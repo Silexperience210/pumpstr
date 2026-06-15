@@ -42,4 +42,6 @@ docker compose up -d
 ```
 
 ---
+**Licence : [AGPL-3.0-only](./LICENSE)** — copyleft réseau : tout node/portail (même modifié, même opéré en service) doit publier sa source → la fédération reste ouverte, anti-custodian par construction.
+
 Conçu le 2026-06-15. Sats only. No KYC. No custody.
