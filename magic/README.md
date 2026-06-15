@@ -33,7 +33,7 @@ exactement pareil.
 
 | Réel | Stub / à venir |
 |---|---|
-| Wallet créateur Arkade + détection temps réel + **identité Nostr du tippeur** (zap NIP-57 signé + profil résolu) | Publisher NIP-53 du live ; zap receipts (9735) |
+| Identité Nostr du tippeur (zap NIP-57) + **live NIP-53 publié** + **zap receipts 9735** + npub créateur (même clé) + portail fédéré | **Vidéo** sous l'overlay (Cloudflare/origine) ; packaging node Docker/Umbrel |
 | Facture LN-in via Boltz (`createLightningInvoice`) | Pas encore de Lightning Address `user@host` (LUD-16) — facture à la demande |
 | Overlay + page tip temps réel (WebSocket) | Identité Nostr / NIP-53 live (couche suivante) |
 | `simulate` pour démo instantanée | Vidéo (Cloudflare Stream / origine) — l'overlay se pose dessus dans OBS |
@@ -45,7 +45,9 @@ exactement pareil.
 | `PORT` | `4242` | |
 | `ARK_SERVER_URL` | `https://mutinynet.arkade.sh` | opérateur (mainnet : `https://arkade.computer`) |
 | `BOLTZ_NETWORK` | `mutinynet` | `bitcoin` \| `mutinynet` \| `regtest` |
-| `NOSTR_RELAYS` | damus, nos.lol, primal | relais pour résoudre le profil du tippeur (kind 0) |
+| `NOSTR_RELAYS` | damus, nos.lol, primal | relais (profil tippeur + publication NIP-53/9735) |
+| `STREAM_TITLE` / `STREAM_SUMMARY` | défauts | métadonnées du live NIP-53 (`kind:30311`) |
+| `STREAM_URL` / `STREAM_IMAGE` | vide | URL HLS + miniature du live (vidéo = couche suivante) |
 
 La clé privée du wallet créateur est générée au 1er boot dans `.creator-key` (gitignoré).
 En RN, le stockage passera par `./adapters/asyncStorage` (ici : polyfill `fake-indexeddb` pour Node).

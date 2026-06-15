@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import { SingleKey, Wallet } from "@arkade-os/sdk";
 import { ArkadeSwaps, BoltzSwapProvider } from "@arkade-os/boltz-swap";
-import { SimplePool, getPublicKey, verifyEvent, nip19 } from "nostr-tools";
+import { SimplePool, getPublicKey, verifyEvent, finalizeEvent, nip19 } from "nostr-tools";
 
 // notifyIncomingFunds démarre aussi un watcher ON-CHAIN (Electrum WS) qui boucle en
 // reconnexion sur mutinynet (pas d'endpoint Electrum). Off-chain (VTXO via SSE) non affecté
@@ -64,6 +64,13 @@ const ARK_SERVER_URL = process.env.ARK_SERVER_URL ?? "https://mutinynet.arkade.s
 const BOLTZ_NETWORK = process.env.BOLTZ_NETWORK ?? "mutinynet";
 const RELAYS = (process.env.NOSTR_RELAYS ?? "wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net")
   .split(",").map((s) => s.trim()).filter(Boolean);
+const STREAM = {
+  d: process.env.STREAM_D ?? "pumpstr-live",
+  title: process.env.STREAM_TITLE ?? "🔴 Pumpstr live",
+  summary: process.env.STREAM_SUMMARY ?? "Streaming souverain sur Bitcoin — tips en sats, en direct.",
+  url: process.env.STREAM_URL ?? "",     // URL HLS (la vidéo = couche suivante) ; vide pour l'instant
+  image: process.env.STREAM_IMAGE ?? "", // miniature
+};
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC = join(HERE, "public");
 const KEY_FILE = join(HERE, ".creator-key");
@@ -125,7 +132,8 @@ async function tipperFromBody(body: any, via: string): Promise<Tipper> {
 console.log(`[arkade] connexion à ${ARK_SERVER_URL} ...`);
 const keyHex = loadOrCreateKeyHex();
 const identity = SingleKey.fromHex(keyHex);
-const creatorPubkey = getPublicKey(Uint8Array.from(Buffer.from(keyHex, "hex"))); // MÊME clé -> Nostr
+const creatorSk = Uint8Array.from(Buffer.from(keyHex, "hex"));
+const creatorPubkey = getPublicKey(creatorSk); // MÊME clé -> wallet Arkade + Nostr (ADR-004)
 const creatorNpub = nip19.npubEncode(creatorPubkey);
 const wallet = await Wallet.create({ identity, arkServerUrl: ARK_SERVER_URL });
 creatorAddress = await wallet.getAddress();
@@ -153,6 +161,57 @@ function registerTip(amount: number, t: Tipper) {
   console.log(`[tip] +${amount} sats — ${t.name} (${t.via})${t.comment ? ` : "${t.comment}"` : ""}`);
 }
 
+// ---------- NIP-53 : publier le live sur Nostr (le portail fédéré l'agrège) ----------
+const startedAt = Math.floor(Date.now() / 1000);
+function buildLiveEvent(status: "live" | "ended", participants: number) {
+  const now = Math.floor(Date.now() / 1000);
+  const tags: string[][] = [
+    ["d", STREAM.d],                              // identifiant stable -> event remplaçable (NIP-53)
+    ["title", STREAM.title],
+    ["summary", STREAM.summary],
+    ["status", status],
+    ["starts", String(startedAt)],
+    ["current_participants", String(participants)],
+    ["p", creatorPubkey, RELAYS[0] ?? "", "host"], // l'hôte
+    ["t", "pumpstr"],                              // le portail filtre là-dessus
+    ["client", "pumpstr"],
+  ];
+  if (STREAM.url) tags.push(["streaming", STREAM.url]);
+  if (STREAM.image) tags.push(["image", STREAM.image]);
+  if (status === "ended") tags.push(["ends", String(now)]);
+  return finalizeEvent({ kind: 30311, created_at: now, content: "", tags }, creatorSk);
+}
+async function publishLive(status: "live" | "ended") {
+  try {
+    await Promise.any(pool.publish(RELAYS, buildLiveEvent(status, clients.size)));
+    console.log(`[nostr] live "${status}" publié (kind:30311 d=${STREAM.d}, ${clients.size} viewers) -> ${RELAYS.length} relais`);
+  } catch (e: any) {
+    console.error("[nostr] publishLive:", e?.message ?? e);
+  }
+}
+
+// ---------- NIP-57 : zap receipt (9735) sur un VRAI paiement LN réglé ----------
+async function publishZapReceipt(zapRequest: any, bolt11: string, amountSats: number) {
+  try {
+    const receipt = finalizeEvent({
+      kind: 9735,
+      created_at: Math.floor(Date.now() / 1000),
+      content: typeof zapRequest?.content === "string" ? zapRequest.content : "",
+      tags: [
+        ["p", creatorPubkey],                                      // bénéficiaire (le créateur)
+        ...(zapRequest?.pubkey ? [["P", zapRequest.pubkey]] : []), // le tippeur
+        ["bolt11", bolt11],
+        ["description", JSON.stringify(zapRequest)],               // la zap request 9734
+        ["amount", String(amountSats * 1000)],
+      ],
+    }, creatorSk);
+    await Promise.any(pool.publish(RELAYS, receipt));
+    console.log(`[nostr] zap receipt 9735 publié (${amountSats} sats)`);
+  } catch (e: any) {
+    console.error("[nostr] zap receipt:", e?.message ?? e);
+  }
+}
+
 // ---------- détection temps réel (SDK) + dédup des tips identifiés ----------
 // Les VTXO claimés par facture (waitAndClaim) sont déjà comptés AVEC identité ; on les
 // dédupe ici par txid pour que la subscription ne les recompte pas en "anon".
@@ -177,7 +236,12 @@ try {
   console.error("[arkade] notifyIncomingFunds a échoué:", e?.message ?? e);
 }
 
-process.on("SIGINT", () => { stopWatch?.(); pool.close(RELAYS); process.exit(0); });
+process.on("SIGINT", async () => {
+  stopWatch?.();
+  await publishLive("ended").catch(() => {}); // marque le live terminé sur Nostr
+  pool.close(RELAYS);
+  process.exit(0);
+});
 
 // ---------- HTTP ----------
 const MIME: Record<string, string> = {
@@ -205,15 +269,21 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/api/invoice" && req.method === "POST") {
     const body = parseJson(await readBody(req));
     const amount = Number(body.amount) || 1000;
+    const zapRequest = body?.zapRequest;
     const tipper = await tipperFromBody(body, "ln");
     try {
       const r: any = await swaps.createLightningInvoice({ amount });
       const bolt11 = r?.invoice ?? r?.bolt11 ?? r?.paymentRequest ?? null;
       const pendingSwap = r?.pendingSwap ?? r;
-      // corrélation identité<->paiement : quand CE swap se règle, on fire le tip identifié
+      // corrélation identité<->paiement : quand CE swap se règle, fire le tip identifié
+      // + publie le zap receipt NIP-57 (9735) — la preuve Nostr du zap.
       if (pendingSwap && typeof (swaps as any).waitAndClaim === "function") {
         (swaps as any).waitAndClaim(pendingSwap)
-          .then((cl: any) => { if (cl?.txid) claimedTxids.add(cl.txid); registerTip(amount, tipper); })
+          .then((cl: any) => {
+            if (cl?.txid) claimedTxids.add(cl.txid);
+            registerTip(amount, tipper);
+            if (zapRequest && bolt11) publishZapReceipt(zapRequest, bolt11, amount);
+          })
           .catch((e: any) => console.error("[ln] waitAndClaim:", e?.message ?? e));
       }
       return sendJson(res, 200, { bolt11, amount });
@@ -228,6 +298,15 @@ const server = createServer(async (req, res) => {
     const tipper = await tipperFromBody(body, "demo");
     registerTip(amount, tipper);
     return sendJson(res, 200, { ok: true, amount, name: tipper.name });
+  }
+
+  // le portail fédéré (client Nostr) — servi depuis ../portal pour le confort de démo
+  if (url.pathname === "/portal" || url.pathname === "/portal/") {
+    try {
+      const data = await readFile(join(HERE, "..", "portal", "index.html"));
+      res.setHeader("content-type", "text/html; charset=utf-8");
+      return res.end(data);
+    } catch { res.statusCode = 404; return res.end("portal not built"); }
   }
 
   // statique
@@ -253,5 +332,8 @@ wss.on("connection", (ws) => {
 server.listen(PORT, () => {
   console.log(`\n  🔥 PUMPSTR magic slice en ligne :`);
   console.log(`     overlay (source OBS) : http://localhost:${PORT}/overlay.html`);
-  console.log(`     page tip (viewer)    : http://localhost:${PORT}/tip.html\n`);
+  console.log(`     page tip (viewer)    : http://localhost:${PORT}/tip.html`);
+  console.log(`     portail fédéré       : http://localhost:${PORT}/portal\n`);
+  publishLive("live");                            // annonce le live sur Nostr (NIP-53)
+  setInterval(() => publishLive("live"), 45_000); // rafraîchit statut + nb de viewers
 });
