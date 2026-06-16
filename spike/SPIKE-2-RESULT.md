@@ -1,11 +1,19 @@
 # Spike #2 — VTXO réclamable (escrow scripté) — RÉSULTAT
 
-**Date :** 2026-06-16 · **Verdict : 🟢 CONSTRUCT FAISABLE (vert).**
-Le construct du *reward async/offline* (`PaymentRail.escrowClaimable`, cf. `../DECISIONS.md` ADR-004)
-est **validé** : il s'assemble depuis les closures reconnues par arkd, round-trip propre, et dérive une
-**vraie adresse d'escrow `tark1…` fundable** contre l'opérateur live MutinyNet.
+**Date :** 2026-06-16 · **Verdict : 🟢 PROUVÉ BOUT-EN-BOUT (vrais sats).**
+Le *reward async/offline* (`PaymentRail.escrowClaimable`/`claim`, cf. `../DECISIONS.md` ADR-004) tourne
+**end-to-end sur MutinyNet** : `escrowClaimable(15000)` → `claim` → solde bénéficiaire **+15 000 sats**,
+`arkTxid` settled. **L'open question est tranchée : arkd CO-SIGNE le claim d'un VtxoScript bespoke.**
+Pas de pivot VHTLC nécessaire.
 
-Validé avec du code qui tourne (`escrow.ts`) contre l'opérateur **live `https://mutinynet.arkade.sh`**.
+> ✅ **MAJ E2E (`packages/payment-rail/escrow-e2e.ts`, funding faucet→LN-in)** : le claim échouait d'abord
+> sur `missing tapscript spend sig` — **pas un rejet du script** mais un détail client : le signer router du
+> wallet **ignore tout input dont le script n'est pas un contrat enregistré** dans son `contractRepository`.
+> Fix dans `ArkadeRail.claim()` : (1) `wallet.contractRepository.saveContract({type:"pumpstr-escrow", …})`
+> (type custom → routé vers le signer identité) + (2) enregistrer un **handler** minimal (`contractHandlers.register`)
+> qui reconstruit le script depuis le `tapTree` (sinon la sync de solde crashe `No handler for type`). Après ça : VERT.
+
+Construct validé offline + funding/escrow/claim validés live contre **`https://mutinynet.arkade.sh`**.
 
 ---
 
@@ -65,16 +73,16 @@ qu'arkd reconnaît** (`MultisigTapscript`, `CLTVMultisigTapscript`, `CSVMultisig
 
 ## Ce qui est PROUVÉ vs ce qui demande des sats de test
 
-| Prouvé (offline + live, sans sats) | À confirmer avec sats de test |
+| Prouvé | Comment |
 |---|---|
-| Le construct s'assemble depuis des closures reconnues | Qu'arkd **co-signe le spend collaboratif** de la feuille `claim` d'un VtxoScript **bespoke** (≠ type de contrat enregistré). VHTLC, lui, est prouvé co-signable (Boltz). |
-| Round-trip decode → arkd reconnaît chaque feuille | Le **funding** réel (`sendBitcoin` vers l'adresse escrow) crée bien un VTXO spendable |
-| Vraie adresse `tark1…` fundable dérivée live | Le **claim** réel par le bénéficiaire crédite son solde (dédup par txid) |
-| Cross-check VHTLC (forme équivalente) construit | Le timing CLTV/CSV vs les bornes réelles de l'opérateur |
+| Le construct s'assemble depuis des closures reconnues | `escrow.ts` (offline + adresse live) |
+| arkd **co-signe le spend collaboratif** de la feuille `claim` d'un VtxoScript **bespoke** | `escrow-e2e.ts` — `arkTxid` settled |
+| Le **funding** réel crée un VTXO spendable | E2E : faucet→LN-in→`wallet.send` vers l'adresse escrow |
+| Le **claim** réel crédite le bénéficiaire | E2E : solde **+15 000 sats** vérifié |
 
-> **Recommandation d'implémentation :** câbler `escrowClaimable` sur la **forme bespoke** (cleaner, pas de
-> faux préimage à trimballer) **mais** garder **VHTLC en fallback** si le test sats montre qu'arkd refuse
-> de co-signer un VtxoScript non-enregistré. Les deux sont prêts dans `escrow.ts`.
+> **Décision :** `escrowClaimable`/`claim` câblés sur la **forme bespoke** (cleaner, pas de préimage). VHTLC
+> n'est **plus nécessaire** (reste dispo dans `escrow.ts` comme cross-check). Implémenté : `ArkadeRail` dans
+> `packages/payment-rail/src/arkade.ts`.
 
 ---
 

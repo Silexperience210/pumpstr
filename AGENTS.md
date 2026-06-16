@@ -15,9 +15,9 @@ self-custodial et fédéré**. Le pump-feel vient de la **vélocité des sats en
   contre l'opérateur live. Détails + preuves : `spike/SPIKE-RESULT.md`.
 - ✅ **Node** construit et runnable : `node/` — vrai wallet créateur Arkade +
   overlay de tips sats temps réel (WebSocket).
-- 🟢 **Spike #2 — construct VALIDÉ** : `escrowClaimable()` = VTXO réclamable scripté (VtxoScript 3 feuilles
-  claim/refund/exit), round-trip arkd-reconnu + **vraie adresse `tark1…` fundable** dérivée live. Preuves :
-  `spike/SPIKE-2-RESULT.md` (`spike/escrow.ts`). Reste (sats de test) : prouver le claim collaboratif E2E.
+- 🟢 **Spike #2 — PROUVÉ BOUT-EN-BOUT (vrais sats)** : `escrowClaimable→claim` = VTXO réclamable scripté
+  (VtxoScript 3 feuilles claim/refund/exit) validé **E2E live mutinynet** (bénéficiaire +15 000 sats, `arkTxid`
+  settled). arkd co-signe le bespoke. Preuves : `spike/SPIKE-2-RESULT.md` + `packages/payment-rail/escrow-e2e.ts`.
 - ✅ **MVP fédéré complet** dans `node/` : identité Nostr (tippeur + créateur), NIP-53 publisher + zap
   receipts (9735), portail fédéré, page watch (vidéo HLS), node **dockerisé** (Node 22, clé sur volume).
 
@@ -99,11 +99,13 @@ ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin 
    l'escrow 3 feuilles → `wallet.send` funding → `ClaimableRef` portable) + `claim` (indexer `getVtxos` →
    `wallet.buildAndSubmitOffchainTx` sur la feuille claim, co-sign serveur) + `previewEscrow` + `send`/`getBalance`/
    `createLnInvoice`. **Typecheck OK** vs SDK 0.4.36, **`npm run verify` vert** live (escrow dérivé, garde-fous).
-   ✅ **(b) FAIT — node branché sur `ArkadeRail`** : `node/server.ts` n'importe plus le SDK ; tout le money passe
-   par le rail (`getAddress`, `onIncomingFunds`, `createLnInvoiceWithSettle`). Identité `.creator-key` préservée
-   (même adresse/npub). ADR-007 bouclé côté produit. Suite : **(a)** prouver le **claim collaboratif E2E avec
-   sats de test** (open Q : arkd co-signe-t-il un VtxoScript bespoke ? sinon fallback VHTLC) ; **(c)** `exit()`
-   via le flow Unroll (stub).
+   ✅ **(b) node branché sur `ArkadeRail`** : `node/server.ts` n'importe plus le SDK ; tout le money passe par le
+   rail. Identité `.creator-key` préservée. ADR-007 bouclé côté produit.
+   ✅ **(a) CLAIM E2E PROUVÉ (vrais sats)** : `escrowClaimable→claim` validé live mutinynet (`packages/payment-rail/
+   escrow-e2e.ts`), bénéficiaire +15 000 sats, `arkTxid` settled. **Open Q tranchée : arkd co-signe un VtxoScript
+   bespoke.** Fix clé dans `claim()` : enregistrer l'escrow comme contrat (`wallet.contractRepository.saveContract`,
+   type custom → signer identité) + un `contractHandlers.register` minimal (sinon la sync de solde crashe). Reste :
+   **(c)** `exit()` via Unroll (stub) ; brancher escrowClaimable/claim dans un vrai flux produit (rewards).
 2. ✅ **Fait** — détection des tips **temps réel** (`wallet.notifyIncomingFunds`, filtre net) **+ identité Nostr
    du tippeur** : il signe une **zap request NIP-57 (kind 9734)**, le backend la **vérifie** (`verifyEvent`) et
    résout son profil (kind 0 : nom + avatar). Corrélation identité↔paiement LN via `waitAndClaim` (dédup par txid).
