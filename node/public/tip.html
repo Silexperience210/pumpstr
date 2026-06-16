@@ -4,60 +4,55 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Pumpstr · tip</title>
+<link rel="stylesheet" href="/pumpstr.css" />
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 <style>
-  :root { --gold:#ffb000; --hot:#ff5e00; --neon:#00ffd1; --card:#15131f; }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  body { font-family:"Segoe UI",system-ui,sans-serif; color:#fff; min-height:100vh;
-    background:radial-gradient(120% 120% at 50% 0%, #1a1726, #0a0910 60%, #050409);
-    display:flex; align-items:center; justify-content:center; padding:20px; }
-  .card { width:min(430px,94vw); background:var(--card); border:1px solid #2a2640; border-radius:20px;
-    padding:24px; box-shadow:0 24px 80px rgba(0,0,0,.6); }
-  .brand { font-weight:800; font-size:18px; } .brand b { color:var(--gold); }
-  .sub { color:#8a83a8; font-size:13px; margin:2px 0 16px; }
+  body{ display:flex; align-items:center; justify-content:center; padding:20px; }
+  .card{ width:min(440px,94vw); padding:26px; }
+  .brand{ font-family:var(--display); font-weight:800; font-size:20px; display:flex; align-items:center; gap:8px; }
+  .brand b{ color:var(--lime); text-shadow:0 0 18px rgba(188,255,46,.45); }
+  .sub{ color:var(--txt-dim); font-size:13px; margin:4px 0 18px; }
 
-  /* identité Nostr */
-  .id { display:flex; align-items:center; gap:10px; background:#1b1830; border:1px solid #2f2a47;
-    border-radius:14px; padding:10px 12px; margin-bottom:16px; }
-  .id img { width:34px; height:34px; border-radius:50%; background:#0e0c16; flex:0 0 34px; }
-  .id .who { flex:1; min-width:0; } .id .who b { font-size:14px; }
-  .id .who small { display:block; color:#8a83a8; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .id button { background:#23203a; color:var(--neon); border:1px solid #2f2a47; border-radius:10px; padding:8px 10px; font-weight:700; font-size:12px; cursor:pointer; }
-  .id button:hover { border-color:var(--neon); }
+  .id{ display:flex; align-items:center; gap:11px; background:rgba(0,0,0,.3); border:1px solid var(--line-2);
+    border-radius:var(--r-sm); padding:10px 12px; margin-bottom:18px; }
+  .id img{ width:36px; height:36px; border-radius:50%; background:var(--ink-2); flex:0 0 36px; }
+  .id .who{ flex:1; min-width:0; } .id .who b{ font-family:var(--display); font-size:14px; }
+  .id .who small{ display:block; font-family:var(--mono); color:var(--txt-faint); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
-  .row { display:flex; gap:10px; margin-bottom:12px; }
-  .amt { flex:1; padding:14px 8px; text-align:center; border-radius:12px; cursor:pointer; font-weight:800;
-    background:#1e1b2e; border:1px solid #2f2a47; transition:.15s; }
-  .amt:hover { border-color:var(--gold); }
-  .amt.sel { background:linear-gradient(180deg,#3a2c12,#241a0c); border-color:var(--gold); color:var(--gold); }
-  .amt small { display:block; font-weight:500; color:#9a93b5; font-size:11px; }
-  input { width:100%; padding:13px; border-radius:12px; background:#1e1b2e; border:1px solid #2f2a47; color:#fff; font-size:15px; margin-bottom:4px; }
-  input:focus { outline:none; border-color:var(--neon); }
-  .btns { display:flex; gap:10px; margin-top:14px; }
-  button.act { flex:1; padding:15px; border:0; border-radius:12px; font-weight:800; font-size:15px; cursor:pointer; transition:.15s; }
-  .pay { background:linear-gradient(90deg,var(--hot),var(--gold)); color:#1a1206; }
-  .pay:hover { filter:brightness(1.08); }
-  .sim { background:#1e1b2e; color:var(--neon); border:1px solid #2f2a47; }
-  .sim:hover { border-color:var(--neon); }
-  .out { margin-top:16px; display:none; } .out.show { display:block; }
-  canvas { display:block; margin:0 auto 12px; border-radius:12px; background:#fff; padding:10px; }
-  .inv { font-family:ui-monospace,monospace; font-size:11px; word-break:break-all; color:#b9b2d6; background:#0e0c16; padding:10px; border-radius:10px; max-height:84px; overflow:auto; }
-  .toast { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(80px);
-    background:linear-gradient(90deg,var(--hot),var(--gold)); color:#1a1206; padding:14px 22px; border-radius:14px; font-weight:800;
-    box-shadow:0 12px 40px rgba(255,120,0,.4); transition:transform .35s cubic-bezier(.2,1.5,.4,1); }
-  .toast.show { transform:translateX(-50%) translateY(0); }
-  .net { margin-top:14px; text-align:center; font-size:11px; color:#6b6588; }
+  .row{ display:flex; gap:10px; margin-bottom:13px; }
+  .amt{ flex:1; padding:15px 8px; text-align:center; border-radius:var(--r-sm); cursor:pointer;
+    font-family:var(--mono); font-weight:800; font-size:18px; color:var(--txt);
+    background:rgba(255,255,255,.03); border:1px solid var(--line-2); transition:.16s var(--ease); }
+  .amt:hover{ border-color:var(--line); transform:translateY(-1px); }
+  .amt.sel{ background:rgba(188,255,46,.12); border-color:var(--lime); color:var(--lime); box-shadow:0 0 22px -6px rgba(188,255,46,.5); }
+  .amt small{ display:block; font-weight:500; color:var(--txt-faint); font-size:11px; letter-spacing:.06em; }
+
+  .btns{ display:flex; gap:10px; margin-top:15px; }
+  .act{ flex:1; }
+  .out{ margin-top:18px; display:none; } .out.show{ display:block; animation:psRise .5s var(--ease); }
+  canvas{ display:block; margin:0 auto 12px; border-radius:12px; background:#fff; padding:10px; box-shadow:0 0 40px -10px rgba(188,255,46,.4); }
+  .inv{ font-family:var(--mono); font-size:11px; word-break:break-all; color:var(--txt-dim); background:rgba(0,0,0,.4);
+    border:1px solid var(--line-2); padding:11px; border-radius:10px; max-height:90px; overflow:auto; }
+  .net{ margin-top:16px; text-align:center; font-size:11px; color:var(--txt-faint); letter-spacing:.02em; }
+
+  .toast{ position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(90px);
+    background:var(--lime); color:#06200a; font-family:var(--mono); font-weight:800; padding:14px 22px; border-radius:var(--r-sm);
+    box-shadow:0 14px 44px -8px rgba(188,255,46,.6); transition:transform .4s var(--spring); }
+  .toast.show{ transform:translateX(-50%) translateY(0); }
 </style>
 </head>
 <body>
-  <div class="card">
-    <div class="brand">⚡ <b>PUMPSTR</b></div>
+  <div class="ps-bg"></div>
+  <div class="ps-grain"></div>
+
+  <div class="card ps-card ps-card--glow">
+    <div class="brand">⚡<b>PUMPSTR</b></div>
     <div class="sub">Envoie des sats au créateur — signé en Nostr, en direct.</div>
 
     <div class="id">
       <img id="idAva" alt="" />
       <div class="who"><b id="idName">…</b><small id="idNpub"></small></div>
-      <button id="connect" title="Utiliser ton extension Nostr (NIP-07)">⚡ Connecter</button>
+      <button id="connect" class="ps-btn ps-btn--ghost" style="padding:9px 12px;font-size:11px" title="Extension Nostr (NIP-07)">⚡ Connecter</button>
     </div>
 
     <div class="row" id="amts">
@@ -65,11 +60,11 @@
       <div class="amt" data-v="2100">2 100<small>sats</small></div>
       <div class="amt" data-v="21000">21 000<small>sats</small></div>
     </div>
-    <input id="comment" placeholder="un mot ? (commentaire du zap)" maxlength="140" />
+    <input id="comment" class="ps-input" placeholder="un mot ? (commentaire du zap)" maxlength="140" />
 
     <div class="btns">
-      <button class="act pay" id="pay">⚡ Payer en Lightning</button>
-      <button class="act sim" id="sim">▶ Simuler (démo)</button>
+      <button class="act ps-btn ps-btn--pump" id="pay">⚡ Payer en Lightning</button>
+      <button class="act ps-btn ps-btn--ghost" id="sim">▶ Simuler</button>
     </div>
 
     <div class="out" id="out">
@@ -77,7 +72,7 @@
       <div class="inv" id="inv"></div>
     </div>
 
-    <div class="net">réseau : MutinyNet (signet) · zap NIP-57 signé · facture payable depuis tout wallet LN de test</div>
+    <div class="net">MutinyNet (signet) · zap NIP-57 signé · payable depuis tout wallet LN de test</div>
   </div>
   <div class="toast" id="toast">⚡ tip reçu !</div>
 
@@ -87,8 +82,7 @@
   const RELAYS = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"];
   const dicebear = (seed) => `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(seed)}`;
 
-  // ---- identité du tippeur : éphémère par défaut, NIP-07 sur demande ----
-  let me = null; // { mode, pubkey, sk? }
+  let me = null;
   function setEphemeral() {
     const sk = generateSecretKey();
     const pubkey = getPublicKey(sk);
@@ -111,13 +105,9 @@
   document.getElementById("connect").onclick = connectNip07;
   setEphemeral();
 
-  // ---- récup pubkey créateur (pour le tag p de la zap request) ----
   let creatorPk = null;
-  fetch("/api/creator").then(r => r.json()).then(j => {
-    try { creatorPk = nip19.decode(j.npub).data; } catch {}
-  });
+  fetch("/api/creator").then(r => r.json()).then(j => { try { creatorPk = nip19.decode(j.npub).data; } catch {} });
 
-  // ---- montant ----
   let amount = 210;
   const amts = document.getElementById("amts");
   amts.addEventListener("click", (e) => {
@@ -126,20 +116,16 @@
     el.classList.add("sel"); amount = Number(el.dataset.v);
   });
 
-  // ---- signe une zap request NIP-57 (kind 9734) ----
   async function signZap() {
     const comment = document.getElementById("comment").value.trim();
     const draft = {
-      kind: 9734,
-      created_at: Math.floor(Date.now() / 1000),
-      content: comment,
+      kind: 9734, created_at: Math.floor(Date.now() / 1000), content: comment,
       tags: [["relays", ...RELAYS], ["amount", String(amount * 1000)], ...(creatorPk ? [["p", creatorPk]] : [])],
     };
     if (me.mode === "nip07") return await window.nostr.signEvent({ ...draft, pubkey: me.pubkey });
     return finalizeEvent(draft, me.sk);
   }
 
-  // ---- actions ----
   document.getElementById("pay").onclick = async () => {
     const out = document.getElementById("out"), invEl = document.getElementById("inv");
     invEl.textContent = "génération de la facture…"; out.classList.add("show");
@@ -163,7 +149,6 @@
     });
   };
 
-  // ---- feedback temps réel ----
   const toast = document.getElementById("toast");
   const ws = new WebSocket(`ws://${location.host}/ws`);
   ws.onmessage = (ev) => {

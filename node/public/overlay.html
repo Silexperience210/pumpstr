@@ -4,69 +4,67 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Pumpstr · overlay</title>
+<link rel="stylesheet" href="/pumpstr.css" />
 <style>
-  /* Pour OBS : régler la source navigateur en "transparent". En standalone, fond sombre. */
-  :root { --gold: #ffb000; --hot: #ff5e00; --neon: #00ffd1; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; overflow: hidden; font-family: "Segoe UI", system-ui, sans-serif; }
-  body {
-    background: radial-gradient(120% 120% at 50% 10%, #15131f 0%, #0a0910 55%, #050409 100%);
-    color: #fff; user-select: none;
-  }
-  #flash { position: fixed; inset: 0; pointer-events: none; opacity: 0;
-    background: radial-gradient(60% 50% at 50% 45%, rgba(255,138,0,.35), transparent 70%); }
-  #flash.on { animation: flash .6s ease-out; }
-  @keyframes flash { 0%{opacity:1} 100%{opacity:0} }
+  /* OBS : source navigateur. Pour compositer sur la vidéo, coche "transparent" /
+     mets ?clear=1 (fond retiré). En standalone : fond ink. */
+  html,body{ height:100%; overflow:hidden; }
+  body{ background:radial-gradient(120% 120% at 50% 8%, #0e1a0f 0%, var(--ink) 60%, #04060500 100%); user-select:none; cursor:none; }
+  body.clear{ background:transparent; }
 
-  .top { position: fixed; top: 22px; left: 24px; right: 24px; display: flex; justify-content: space-between; align-items: center; }
-  .brand { font-weight: 800; letter-spacing: .5px; font-size: 20px; }
-  .brand b { color: var(--gold); }
-  .live { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; color: #ff5b5b; }
-  .live .dot { width: 10px; height: 10px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 12px #ff3b3b; animation: pulse 1.3s infinite; }
-  @keyframes pulse { 50% { opacity: .35; } }
-  .addr { font-family: ui-monospace, monospace; font-size: 12px; color: #9a93b5; }
+  /* flash + shockwave à chaque tip */
+  #flash{ position:fixed; inset:0; pointer-events:none; opacity:0;
+    background:radial-gradient(60% 50% at 50% 44%, rgba(188,255,46,.30), transparent 70%); }
+  #flash.on{ animation:flash .6s ease-out; }
+  @keyframes flash{ 0%{opacity:1} 100%{opacity:0} }
+  .shock{ position:fixed; left:50%; top:46%; width:40px; height:40px; margin:-20px 0 0 -20px; border-radius:50%;
+    border:2px solid var(--lime); pointer-events:none; animation:shock 1s var(--ease) forwards; }
+  @keyframes shock{ 0%{ opacity:.9; transform:scale(.4) } 100%{ opacity:0; transform:scale(11) } }
 
-  .stage { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .label { text-transform: uppercase; letter-spacing: 6px; font-size: 14px; color: #8a83a8; margin-bottom: 6px; }
-  .counter {
-    font-family: ui-monospace, "Cascadia Code", monospace; font-weight: 800;
-    font-size: clamp(64px, 16vw, 200px); line-height: 1;
-    color: var(--gold);
-    text-shadow: 0 0 18px rgba(255,176,0,.55), 0 0 60px rgba(255,94,0,.35);
-    transition: transform .18s cubic-bezier(.2,1.6,.4,1);
-  }
-  .counter.pop { transform: scale(1.12); }
-  .unit { font-size: clamp(16px,3vw,28px); letter-spacing: 4px; color: #ffd47a; margin-top: 10px; }
+  .top{ position:fixed; top:24px; left:26px; right:26px; display:flex; justify-content:space-between; align-items:center; gap:14px; }
+  .brand{ font-family:var(--display); font-weight:800; letter-spacing:-.02em; font-size:22px; display:flex; align-items:center; gap:9px; }
+  .brand b{ color:var(--lime); text-shadow:0 0 20px rgba(188,255,46,.5); }
+  .addr{ font-family:var(--mono); font-size:12px; letter-spacing:.06em; color:var(--txt-faint); }
 
-  .hype { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); width: min(560px, 70vw); height: 8px;
-    background: rgba(255,255,255,.08); border-radius: 99px; overflow: hidden; }
-  .hype > i { display: block; height: 100%; width: 0%; border-radius: 99px;
-    background: linear-gradient(90deg, var(--hot), var(--gold), var(--neon)); transition: width .5s ease; box-shadow: 0 0 14px var(--gold); }
+  .stage{ position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .label{ font-family:var(--mono); text-transform:uppercase; letter-spacing:.5em; font-size:13px; color:var(--txt-dim); margin-bottom:4px; }
+  .counter{ font-family:var(--mono); font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:-.04em;
+    font-size:clamp(72px,17vw,216px); line-height:.92; color:var(--lime);
+    text-shadow:0 0 24px rgba(188,255,46,.55), 0 0 80px rgba(188,255,46,.28);
+    animation:breathe 3s var(--ease) infinite; transition:transform .18s cubic-bezier(.2,1.7,.4,1); }
+  .counter.pop{ transform:scale(1.13); }
+  @keyframes breathe{ 50%{ text-shadow:0 0 34px rgba(188,255,46,.85), 0 0 110px rgba(188,255,46,.4) } }
+  .unit{ font-family:var(--mono); font-size:clamp(15px,3vw,26px); letter-spacing:.4em; text-transform:uppercase; color:var(--lime-soft); margin-top:12px; opacity:.85; }
 
-  .ticker { position: fixed; bottom: 26px; left: 0; right: 0; text-align: center; font-size: 15px; color: #b9b2d6; height: 22px; }
-  .ticker b { color: var(--gold); }
+  .hype{ position:fixed; left:50%; bottom:104px; transform:translateX(-50%); width:min(600px,72vw); height:9px;
+    background:rgba(255,255,255,.07); border-radius:99px; overflow:hidden; box-shadow:inset 0 0 0 1px var(--line-2); }
+  .hype>i{ display:block; height:100%; width:0%; border-radius:99px;
+    background:linear-gradient(90deg, var(--magenta), var(--amber), var(--lime)); transition:width .5s var(--ease);
+    box-shadow:0 0 18px var(--lime); }
+  .ticker{ position:fixed; bottom:30px; left:0; right:0; text-align:center; font-family:var(--mono); font-size:14px; color:var(--txt-dim); height:22px; letter-spacing:.02em; }
+  .ticker b{ color:var(--lime); }
 
-  /* tips qui montent */
-  .float { position: fixed; left: 50%; bottom: 30%; transform: translateX(-50%);
-    font-weight: 800; text-align: center; pointer-events: none;
-    animation: rise 2.1s cubic-bezier(.2,.8,.2,1) forwards; }
-  .float .ava { width: 54px; height: 54px; border-radius: 50%; display: block; margin: 0 auto 6px;
-    border: 2px solid var(--gold); box-shadow: 0 0 18px var(--gold); background: #0e0c16; }
-  .float .amt { font-size: 46px; color: #fff; text-shadow: 0 0 22px var(--gold); white-space: nowrap; }
-  .float .amt .s { color: var(--gold); }
-  .float .who { display: block; font-size: 16px; color: var(--neon); margin-top: 2px; }
-  .float .cmt { display: block; font-size: 15px; color: #e8e2ff; font-weight: 500; margin-top: 3px; max-width: 60vw; margin-inline: auto; }
-  @keyframes rise { 0%{opacity:0; transform: translate(-50%,20px) scale(.8)} 12%{opacity:1; transform:translate(-50%,0) scale(1)} 100%{opacity:0; transform: translate(-50%,-260px) scale(1.05)} }
+  /* tip qui monte */
+  .float{ position:fixed; left:50%; bottom:32%; transform:translateX(-50%); text-align:center; pointer-events:none;
+    animation:rise 2.2s cubic-bezier(.2,.8,.2,1) forwards; }
+  .float .ava{ width:58px; height:58px; border-radius:50%; display:block; margin:0 auto 8px; background:var(--ink-2);
+    border:2px solid var(--lime); box-shadow:0 0 22px rgba(188,255,46,.6); }
+  .float .amt{ font-family:var(--mono); font-weight:800; font-size:50px; color:#fff; text-shadow:0 0 26px rgba(188,255,46,.7); white-space:nowrap; }
+  .float .amt .s{ color:var(--lime); }
+  .float .who{ display:block; font-family:var(--mono); font-weight:600; font-size:16px; color:var(--magenta); margin-top:3px; }
+  .float .cmt{ display:block; font-family:var(--display); font-size:16px; color:var(--txt); margin-top:4px; max-width:60vw; margin-inline:auto; }
+  @keyframes rise{ 0%{opacity:0; transform:translate(-50%,24px) scale(.78)} 12%{opacity:1; transform:translate(-50%,0) scale(1)} 100%{opacity:0; transform:translate(-50%,-280px) scale(1.06)} }
 
-  .coin { position: fixed; bottom: 34%; font-size: 26px; pointer-events: none; animation: burst 1.4s ease-out forwards; }
-  @keyframes burst { 0%{opacity:0; transform: translateY(0) scale(.5)} 15%{opacity:1} 100%{opacity:0; transform: translate(var(--dx), -180px) rotate(var(--rot)) scale(1.1)} }
+  .coin{ position:fixed; bottom:36%; font-size:28px; pointer-events:none; animation:burst 1.5s ease-out forwards; }
+  @keyframes burst{ 0%{opacity:0; transform:translateY(0) scale(.5)} 15%{opacity:1} 100%{opacity:0; transform:translate(var(--dx),-200px) rotate(var(--rot)) scale(1.15)} }
+  @media (prefers-reduced-motion:reduce){ .counter{animation:none} }
 </style>
 </head>
 <body>
   <div id="flash"></div>
   <div class="top">
-    <div class="brand">⚡ <b>PUMPSTR</b></div>
-    <div class="live"><span class="dot"></span> LIVE</div>
+    <div class="brand">⚡<b>PUMPSTR</b></div>
+    <div class="ps-pill ps-pill--live">Live</div>
     <div class="addr" id="addr">connexion…</div>
   </div>
 
@@ -85,6 +83,7 @@
   const tickerEl = document.getElementById("ticker");
   const hypeEl = document.getElementById("hype");
   const flashEl = document.getElementById("flash");
+  if (new URLSearchParams(location.search).get("clear") === "1") document.body.classList.add("clear");
 
   let total = 0, shown = 0, comboTimer = null, combo = 0;
   const fmt = (n) => n.toLocaleString("fr-FR");
@@ -102,6 +101,7 @@
 
   const dicebear = (seed) => `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(seed || "anon")}`;
   const esc = (s) => String(s ?? "").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+  const GLYPHS = ["⚡", "🪙", "₿", "✦"];
 
   function floatTip(tip) {
     const ava = tip.picture || dicebear(tip.pubkey || tip.name);
@@ -113,18 +113,25 @@
       `<span class="who">${esc(tip.name || "anon")}</span>` +
       (tip.comment ? `<span class="cmt">“${esc(tip.comment)}”</span>` : "");
     document.body.appendChild(f);
-    setTimeout(() => f.remove(), 2300);
-    const n = Math.min(3 + Math.round(tip.amount / 1000), 14);
+    setTimeout(() => f.remove(), 2400);
+    const n = Math.min(4 + Math.round(tip.amount / 800), 18);
     for (let i = 0; i < n; i++) {
       const c = document.createElement("div");
-      c.className = "coin"; c.textContent = Math.random() > .5 ? "🪙" : "⚡";
-      c.style.left = (50 + (Math.random() * 30 - 15)) + "vw";
-      c.style.setProperty("--dx", (Math.random() * 240 - 120) + "px");
-      c.style.setProperty("--rot", (Math.random() * 540 - 270) + "deg");
-      c.style.animationDelay = (Math.random() * .15) + "s";
+      c.className = "coin"; c.textContent = GLYPHS[(Math.random() * GLYPHS.length) | 0];
+      c.style.left = (50 + (Math.random() * 34 - 17)) + "vw";
+      c.style.setProperty("--dx", (Math.random() * 280 - 140) + "px");
+      c.style.setProperty("--rot", (Math.random() * 560 - 280) + "deg");
+      c.style.animationDelay = (Math.random() * .18) + "s";
       document.body.appendChild(c);
-      setTimeout(() => c.remove(), 1500);
+      setTimeout(() => c.remove(), 1600);
     }
+  }
+
+  function shockwave() {
+    const s = document.createElement("div");
+    s.className = "shock";
+    document.body.appendChild(s);
+    setTimeout(() => s.remove(), 1000);
   }
 
   function onTip(tip) {
@@ -133,6 +140,7 @@
     counterEl.classList.add("pop");
     setTimeout(() => counterEl.classList.remove("pop"), 200);
     flashEl.classList.remove("on"); void flashEl.offsetWidth; flashEl.classList.add("on");
+    shockwave();
     floatTip(tip);
     tickerEl.innerHTML = `dernier tip : <b>+${fmt(tip.amount)} sats</b> par ${esc(tip.name || "anon")}`;
     combo += tip.amount;
