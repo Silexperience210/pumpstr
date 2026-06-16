@@ -7,6 +7,7 @@
   "scripts": {
     "smoke": "tsx smoke.ts",
     "lnin": "tsx ln-in.ts",
+    "escrow": "tsx escrow.ts",
     "audit:rn": "tsx audit-rn.ts"
   },
   "dependencies": {

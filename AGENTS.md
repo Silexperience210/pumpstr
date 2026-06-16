@@ -15,7 +15,9 @@ self-custodial et fédéré**. Le pump-feel vient de la **vélocité des sats en
   contre l'opérateur live. Détails + preuves : `spike/SPIKE-RESULT.md`.
 - ✅ **Node** construit et runnable : `node/` — vrai wallet créateur Arkade +
   overlay de tips sats temps réel (WebSocket).
-- ⏳ **Spike #2 OUVERT** : `escrowClaimable()` = VTXO réclamable via Arkade Script (rewards async).
+- 🟢 **Spike #2 — construct VALIDÉ** : `escrowClaimable()` = VTXO réclamable scripté (VtxoScript 3 feuilles
+  claim/refund/exit), round-trip arkd-reconnu + **vraie adresse `tark1…` fundable** dérivée live. Preuves :
+  `spike/SPIKE-2-RESULT.md` (`spike/escrow.ts`). Reste (sats de test) : prouver le claim collaboratif E2E.
 - ✅ **MVP fédéré complet** dans `node/` : identité Nostr (tippeur + créateur), NIP-53 publisher + zap
   receipts (9735), portail fédéré, page watch (vidéo HLS), node **dockerisé** (Node 22, clé sur volume).
 
@@ -45,7 +47,8 @@ Pumpstr/
 ├── packages/payment-rail/  ← interface PaymentRail VERROUILLÉE (défaut : Arkade)
 ├── node/                ← LE NODE runnable (Docker/Umbrel) : server.ts + public/{overlay,tip,watch}.html (sert /portal)
 ├── portal/              ← portail fédéré : index.html = client Nostr (kind:30311 #t=pumpstr), servi à /portal
-└── spike/               ← Spike A : preuve Arkade RN + LN-in (smoke.ts, ln-in.ts, SPIKE-RESULT.md)
+└── spike/               ← Spike A : Arkade RN + LN-in (smoke.ts, ln-in.ts, SPIKE-RESULT.md)
+                            Spike #2 : VTXO réclamable (escrow.ts, SPIKE-2-RESULT.md)
 ```
 
 ## ⚠️ Faits vérifiés & pièges (issus du spike — NON dérivables, critiques)
@@ -91,7 +94,9 @@ ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin 
 > Node 22 LTS. Réseau réel requis (opérateur Arkade). Secrets jamais commités (`.creator-key`, `.env` gitignorés).
 
 ## Prochaines étapes (ordre suggéré)
-1. **Spike #2** : `PaymentRail.escrowClaimable()` — VTXO réclamable via Arkade Script (rewards async/offline).
+1. 🟢 **Fait (construct)** — **Spike #2** : VTXO réclamable scripté validé (`spike/escrow.ts`,
+   `spike/SPIKE-2-RESULT.md`). Suite : (a) prouver le **claim collaboratif** avec sats de test, puis
+   (b) implémenter `ArkadeRail.escrowClaimable()`/`claim()` dans `packages/payment-rail` (ADR-007).
 2. ✅ **Fait** — détection des tips **temps réel** (`wallet.notifyIncomingFunds`, filtre net) **+ identité Nostr
    du tippeur** : il signe une **zap request NIP-57 (kind 9734)**, le backend la **vérifie** (`verifyEvent`) et
    résout son profil (kind 0 : nom + avatar). Corrélation identité↔paiement LN via `waitAndClaim` (dédup par txid).
