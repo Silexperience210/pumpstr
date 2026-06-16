@@ -4,57 +4,48 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Pumpstr · watch</title>
+<link rel="stylesheet" href="/pumpstr.css" />
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 <style>
-  :root { --gold:#ffb000; --hot:#ff5e00; --neon:#00ffd1; }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  html,body { height:100%; overflow:hidden; font-family:"Segoe UI",system-ui,sans-serif; color:#fff; background:#050409; }
-  #vid { position:fixed; inset:0; width:100%; height:100%; object-fit:cover; background:#0a0910; }
-  .scrim { position:fixed; inset:0; pointer-events:none; background:linear-gradient(180deg, rgba(5,4,9,.55) 0%, transparent 22%, transparent 60%, rgba(5,4,9,.85) 100%); }
+  html,body{ height:100%; overflow:hidden; }
+  #vid{ position:fixed; inset:0; width:100%; height:100%; object-fit:cover; background:var(--ink-1); }
+  .scrim{ position:fixed; inset:0; pointer-events:none;
+    background:linear-gradient(180deg, rgba(7,10,8,.6) 0%, transparent 22%, transparent 56%, rgba(7,10,8,.9) 100%); }
 
-  .top { position:fixed; top:16px; left:18px; right:18px; display:flex; align-items:center; gap:12px; }
-  .brand { font-weight:800; font-size:18px; } .brand b { color:var(--gold); }
-  .live { display:flex; align-items:center; gap:7px; font-weight:800; font-size:13px; color:#ff5b5b; }
-  .live .dot { width:9px; height:9px; border-radius:50%; background:#ff3b3b; box-shadow:0 0 10px #ff3b3b; animation:pulse 1.3s infinite; }
-  @keyframes pulse { 50% { opacity:.35; } }
-  .demo { font-size:11px; font-weight:800; color:#1a1206; background:var(--gold); padding:2px 8px; border-radius:99px; }
-  .host { margin-left:auto; display:flex; align-items:center; gap:8px; font-size:13px; color:#cfc9e6; }
-  .host img { width:28px; height:28px; border-radius:50%; background:#0e0c16; }
-  .count { font-family:ui-monospace,monospace; font-weight:800; color:var(--gold); text-shadow:0 0 12px rgba(255,176,0,.5); }
+  .top{ position:fixed; top:16px; left:18px; right:18px; display:flex; align-items:center; gap:12px; z-index:2; }
+  .brand{ font-family:var(--display); font-weight:800; font-size:18px; } .brand b{ color:var(--lime); }
+  .demo{ font-family:var(--mono); font-size:11px; font-weight:700; color:#06200a; background:var(--lime); padding:3px 9px; border-radius:99px; }
+  .host{ margin-left:auto; display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:13px; color:var(--txt-dim); }
+  .host img{ width:28px; height:28px; border-radius:50%; background:var(--ink-2); border:1px solid var(--line); }
+  .count{ font-family:var(--mono); font-weight:800; color:var(--lime); text-shadow:0 0 14px rgba(188,255,46,.5); }
 
-  /* tips qui montent */
-  .float { position:fixed; left:50%; bottom:160px; transform:translateX(-50%); text-align:center; pointer-events:none;
-    animation:rise 2.3s cubic-bezier(.2,.8,.2,1) forwards; }
-  .float img { width:46px; height:46px; border-radius:50%; display:block; margin:0 auto 5px; border:2px solid var(--gold); box-shadow:0 0 16px var(--gold); background:#0e0c16; }
-  .float .amt { font-size:38px; font-weight:800; text-shadow:0 0 20px var(--gold); }
-  .float .amt .s { color:var(--gold); }
-  .float .who { font-size:14px; color:var(--neon); font-weight:700; }
-  .float .cmt { font-size:13px; color:#e8e2ff; }
-  @keyframes rise { 0%{opacity:0; transform:translate(-50%,20px) scale(.85)} 12%{opacity:1; transform:translate(-50%,0) scale(1)} 100%{opacity:0; transform:translate(-50%,-230px) scale(1.05)} }
+  .float{ position:fixed; left:50%; bottom:170px; transform:translateX(-50%); text-align:center; pointer-events:none; z-index:2;
+    animation:rise 2.4s cubic-bezier(.2,.8,.2,1) forwards; }
+  .float img{ width:48px; height:48px; border-radius:50%; display:block; margin:0 auto 6px; border:2px solid var(--lime); box-shadow:0 0 18px rgba(188,255,46,.6); background:var(--ink-2); }
+  .float .amt{ font-family:var(--mono); font-size:40px; font-weight:800; text-shadow:0 0 22px rgba(188,255,46,.7); }
+  .float .amt .s{ color:var(--lime); }
+  .float .who{ font-family:var(--mono); font-size:14px; color:var(--magenta); font-weight:700; }
+  .float .cmt{ font-family:var(--display); font-size:14px; color:var(--txt); }
+  @keyframes rise{ 0%{opacity:0; transform:translate(-50%,22px) scale(.82)} 12%{opacity:1; transform:translate(-50%,0) scale(1)} 100%{opacity:0; transform:translate(-50%,-250px) scale(1.06)} }
 
-  /* barre de tip */
-  .bar { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); width:min(640px,94vw);
-    background:rgba(21,19,31,.82); backdrop-filter:blur(10px); border:1px solid #2f2a47; border-radius:18px; padding:12px; }
-  .idrow { display:flex; align-items:center; gap:9px; margin-bottom:10px; }
-  .idrow img { width:26px; height:26px; border-radius:50%; background:#0e0c16; }
-  .idrow b { font-size:13px; } .idrow small { color:#8a83a8; font-size:11px; }
-  .idrow button { margin-left:auto; background:#23203a; color:var(--neon); border:1px solid #2f2a47; border-radius:9px; padding:6px 9px; font-weight:700; font-size:12px; cursor:pointer; }
-  .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .amt { padding:9px 12px; border-radius:10px; cursor:pointer; font-weight:800; background:#1e1b2e; border:1px solid #2f2a47; }
-  .amt.sel { background:linear-gradient(180deg,#3a2c12,#241a0c); border-color:var(--gold); color:var(--gold); }
-  .controls input { flex:1; min-width:120px; padding:10px; border-radius:10px; background:#1e1b2e; border:1px solid #2f2a47; color:#fff; }
-  .controls input:focus { outline:none; border-color:var(--neon); }
-  .controls button.act { padding:11px 14px; border:0; border-radius:10px; font-weight:800; cursor:pointer; }
-  .pay { background:linear-gradient(90deg,var(--hot),var(--gold)); color:#1a1206; }
-  .sim { background:#1e1b2e; color:var(--neon); border:1px solid #2f2a47; }
+  .bar{ position:fixed; left:50%; bottom:18px; transform:translateX(-50%); width:min(660px,94vw); z-index:3;
+    background:rgba(11,17,13,.78); backdrop-filter:blur(16px); border:1px solid var(--line-2); border-radius:var(--r); padding:13px; }
+  .idrow{ display:flex; align-items:center; gap:9px; margin-bottom:11px; }
+  .idrow img{ width:28px; height:28px; border-radius:50%; background:var(--ink-2); }
+  .idrow b{ font-family:var(--display); font-size:13px; } .idrow small{ font-family:var(--mono); color:var(--txt-faint); font-size:11px; }
+  .controls{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .amt{ padding:10px 13px; border-radius:var(--r-sm); cursor:pointer; font-family:var(--mono); font-weight:800;
+    background:rgba(255,255,255,.03); border:1px solid var(--line-2); transition:.16s; }
+  .amt:hover{ border-color:var(--line); }
+  .amt.sel{ background:rgba(188,255,46,.12); border-color:var(--lime); color:var(--lime); }
+  .controls input{ flex:1; min-width:120px; }
+  #unmute{ position:fixed; bottom:140px; right:18px; z-index:3; }
 
-  #unmute { position:fixed; bottom:130px; right:18px; background:rgba(0,0,0,.6); color:#fff; border:1px solid #3a3550; border-radius:99px; padding:9px 14px; font-weight:700; cursor:pointer; }
-  .modal { position:fixed; inset:0; background:rgba(5,4,9,.8); display:none; align-items:center; justify-content:center; z-index:9; }
-  .modal.show { display:flex; }
-  .modal .box { background:#15131f; border:1px solid #2f2a47; border-radius:18px; padding:22px; text-align:center; width:min(320px,92vw); }
-  .modal canvas { background:#fff; border-radius:12px; padding:10px; }
-  .modal .inv { font-family:ui-monospace,monospace; font-size:10px; word-break:break-all; color:#b9b2d6; margin-top:10px; max-height:70px; overflow:auto; }
-  .modal .x { margin-top:12px; width:100%; padding:10px; background:#23203a; color:#fff; border:0; border-radius:10px; font-weight:700; cursor:pointer; }
+  .modal{ position:fixed; inset:0; background:rgba(7,10,8,.82); backdrop-filter:blur(6px); display:none; align-items:center; justify-content:center; z-index:9; }
+  .modal.show{ display:flex; }
+  .modal .box{ padding:22px; text-align:center; width:min(330px,92vw); }
+  .modal canvas{ background:#fff; border-radius:12px; padding:10px; box-shadow:0 0 50px -10px rgba(188,255,46,.5); }
+  .modal .inv{ font-family:var(--mono); font-size:10px; word-break:break-all; color:var(--txt-dim); margin-top:12px; max-height:74px; overflow:auto; }
 </style>
 </head>
 <body>
@@ -62,33 +53,33 @@
   <div class="scrim"></div>
 
   <div class="top">
-    <div class="brand">⚡ <b>PUMPSTR</b></div>
-    <div class="live"><span class="dot"></span> LIVE</div>
+    <div class="brand">⚡<b>PUMPSTR</b></div>
+    <div class="ps-pill ps-pill--live">Live</div>
     <span class="demo" id="demo" style="display:none">flux démo</span>
     <div class="host"><span class="count" id="count">0</span> sats · <img id="hostAva" alt="" /> <span id="hostName">…</span></div>
   </div>
 
-  <button id="unmute">🔊 activer le son</button>
+  <button id="unmute" class="ps-btn ps-btn--ghost">🔊 activer le son</button>
 
   <div class="bar">
     <div class="idrow">
       <img id="idAva" alt="" /><div><b id="idName">…</b><br><small id="idNpub"></small></div>
-      <button id="connect">⚡ Connecter Nostr</button>
+      <button id="connect" class="ps-btn ps-btn--ghost" style="margin-left:auto;padding:8px 11px;font-size:11px">⚡ Connecter Nostr</button>
     </div>
     <div class="controls">
       <div class="amt sel" data-v="210">210</div>
       <div class="amt" data-v="2100">2 100</div>
       <div class="amt" data-v="21000">21 000</div>
-      <input id="comment" placeholder="un mot ?" maxlength="140" />
-      <button class="act sim" id="sim">▶ Simuler</button>
-      <button class="act pay" id="pay">⚡ Tip</button>
+      <input id="comment" class="ps-input" placeholder="un mot ?" maxlength="140" />
+      <button class="act ps-btn ps-btn--ghost" id="sim">▶ Simuler</button>
+      <button class="act ps-btn ps-btn--pump" id="pay">⚡ Tip</button>
     </div>
   </div>
 
-  <div class="modal" id="modal"><div class="box">
+  <div class="modal" id="modal"><div class="box ps-card">
     <canvas id="qr" width="220" height="220"></canvas>
     <div class="inv" id="inv"></div>
-    <button class="x" id="close">fermer</button>
+    <button class="x ps-btn ps-btn--ghost" id="close" style="width:100%;margin-top:14px;justify-content:center">fermer</button>
   </div></div>
 
 <script type="module">
@@ -101,7 +92,6 @@
   const esc = (s) => String(s ?? "").replace(/[<>&]/g, (c) => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;" }[c]));
   const fmt = (n) => n.toLocaleString("fr-FR");
 
-  // ---- vidéo ----
   const vid = document.getElementById("vid");
   const { url, demo } = await fetch("/api/stream").then((r) => r.json()).catch(() => ({}));
   const src = url || DEMO_HLS;
@@ -111,7 +101,6 @@
   else vid.src = src;
   document.getElementById("unmute").onclick = (e) => { vid.muted = false; vid.play(); e.target.style.display = "none"; };
 
-  // ---- créateur ----
   let creatorPk = null;
   fetch("/api/creator").then((r) => r.json()).then((j) => {
     try { creatorPk = nip19.decode(j.npub).data; } catch {}
@@ -119,7 +108,6 @@
     document.getElementById("hostAva").src = dicebear(creatorPk || "host");
   });
 
-  // ---- identité tippeur (Nostr) ----
   let me = null;
   function paintId(name, npub, ava) {
     document.getElementById("idName").textContent = name;
@@ -158,7 +146,6 @@
   };
   document.getElementById("close").onclick = () => modal.classList.remove("show");
 
-  // ---- tips temps réel superposés ----
   let total = 0, shown = 0;
   const countEl = document.getElementById("count");
   function animate() { const step = () => { const d = total - shown; if (Math.abs(d) < 1) { shown = total; countEl.textContent = fmt(total); return; } shown += d * 0.2; countEl.textContent = fmt(Math.round(shown)); requestAnimationFrame(step); }; step(); }
