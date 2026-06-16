@@ -212,6 +212,29 @@
       transition:background .18s, color .18s; }
     .mini:hover{ background:var(--ink-deep); color:var(--paper); }
     .mini.done{ background:var(--ink-green); color:var(--paper); border-color:var(--ink-green); }
+    .mini.solid{ background:var(--vermilion); color:var(--paper); border-color:var(--vermilion); }
+    .mini.solid:hover{ background:var(--vermilion-deep); color:var(--paper); }
+
+    /* claim signé dans le navigateur */
+    .keypanel{ margin-top:13px; padding:13px 14px; border:1px solid rgba(191,47,42,.4); border-radius:3px; background:rgba(191,47,42,.05); }
+    .keypanel[hidden]{ display:none; }
+    .warn{ font-size:9.5px; line-height:1.55; letter-spacing:.02em; color:var(--vermilion-deep); margin-bottom:10px; }
+    .warn b{ color:var(--vermilion); }
+    .keydial{ display:flex; border:1px solid rgba(20,58,44,.35); border-radius:2px; overflow:hidden; background:var(--paper); }
+    .keydial input{ flex:1; min-width:0; border:0; background:transparent; color:var(--ink-deep);
+      font-family:"IBM Plex Mono",monospace; font-size:12px; letter-spacing:.04em; padding:11px 12px; }
+    .keydial input:focus{ outline:none; }
+    .keydial button{ flex:none; cursor:none; border:0; background:var(--vermilion); color:var(--paper);
+      font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:10px; letter-spacing:.22em; text-transform:uppercase; padding:0 18px; transition:background .2s; }
+    .keydial button:hover{ background:var(--vermilion-deep); }
+    .keydial button:disabled{ opacity:.45; }
+    .cstatus{ margin-top:9px; min-height:14px; font-size:10.5px; letter-spacing:.03em; color:rgba(20,58,44,.7); }
+    .cstatus.run{ color:var(--ink-green); }
+    .cstatus.run::before{ content:"⟳ "; display:inline-block; animation:spin 1s linear infinite; }
+    .cstatus.ok{ color:#1c6b3f; font-weight:500; }
+    .cstatus.err{ color:var(--vermilion); }
+    .cstatus .txid{ font-size:9.5px; color:rgba(20,58,44,.55); }
+    @keyframes spin{ to{ transform:rotate(360deg) } }
     .howto{ margin-top:12px; font-size:10.5px; line-height:1.6; color:rgba(20,58,44,.78); }
     .howto b{ color:var(--ink-deep); }
 
@@ -279,6 +302,76 @@
 
   <script type="module">
     import { nip19 } from "https://esm.sh/nostr-tools@2.7.2";
+
+    /* ===========================================================
+       CLAIM IN-BROWSER (self-custody) — mirror exact de ArkadeRail.claim().
+       Le SDK Arkade est chargé À LA DEMANDE (gros bundle). En navigateur,
+       IndexedDB + EventSource sont natifs : aucun polyfill. La clé privée
+       signe LOCALEMENT et ne quitte jamais la page.
+       =========================================================== */
+    const OPERATORS = { mutinynet:"https://mutinynet.arkade.sh", bitcoin:"https://arkade.computer", signet:"https://mutinynet.arkade.sh" };
+    const ESCROW_TYPE = "pumpstr-escrow";
+    const bhex = (u) => Array.from(u, (b) => b.toString(16).padStart(2, "0")).join("");
+    const unhex = (h) => Uint8Array.from(h.match(/.{1,2}/g).map((x) => parseInt(x, 16)));
+
+    function decodeRef(id) {
+      if (!id || !id.startsWith("pumpstr-claim&")) throw new Error("jeton de claim invalide");
+      const out = {};
+      for (const p of id.slice(14).split("&")) { const i = p.indexOf("="); if (i > 0) out[p.slice(0, i)] = p.slice(i + 1); }
+      for (const k of ["net", "tapTree", "claimLeaf", "beneficiary", "expiry", "amount", "tx"]) if (!(k in out)) throw new Error("jeton incomplet (" + k + ")");
+      if (/…|\.\.\./.test(out.tapTree)) throw new Error("jeton tronqué (aperçu démo) — il faut un vrai bon émis par un node");
+      return out;
+    }
+    let _sdk;
+    const loadSdk = async () => (_sdk ??= await import("https://esm.sh/@arkade-os/sdk@0.4.36"));
+    function ensureHandler(sdk) {
+      if (sdk.contractHandlers.has(ESCROW_TYPE)) return;
+      sdk.contractHandlers.register({
+        type: ESCROW_TYPE,
+        createScript(params) { const v = sdk.VtxoScript.decode(unhex(params.tapTree)); const leaf = v.findLeaf(params.claimLeaf); v.forfeit = () => leaf; v.exit = () => leaf; return v; },
+        serializeParams: (p) => p, deserializeParams: (p) => p, selectPath: () => null, getAllSpendingPaths: () => [],
+      });
+    }
+    function privFromInput(v) {
+      const t = (v || "").trim();
+      if (/^[0-9a-fA-F]{64}$/.test(t)) return t.toLowerCase();
+      try { const d = nip19.decode(t); if (d.type === "nsec") return bhex(d.data); } catch { /* fallthrough */ }
+      throw new Error("clé invalide — attendu nsec1… ou 64 hex");
+    }
+    /** Encaisse le bon vers le wallet du bénéficiaire. privHex ne quitte pas la page. */
+    async function claimInBrowser(refStr, privHex, onStep) {
+      const r = decodeRef(refStr);
+      onStep?.("Chargement du SDK Arkade…");
+      const sdk = await loadSdk();
+      const identity = sdk.SingleKey.fromHex(privHex);
+      const meX = bhex(await identity.xOnlyPublicKey());
+      if (meX !== r.beneficiary.toLowerCase()) throw new Error("cette clé n'est pas le bénéficiaire de ce bon");
+      const url = OPERATORS[r.net] || OPERATORS.mutinynet;
+      onStep?.("Connexion au coffre…");
+      const wallet = await sdk.Wallet.create({ identity, arkServerUrl: url });
+      const info = await new sdk.RestArkProvider(url).getInfo();
+      const serverX = unhex(sdk.toXOnlySignerHex(info.signerPubkey));
+      const prefix = info.network === "bitcoin" ? "ark" : "tark";
+      const script = sdk.VtxoScript.decode(unhex(r.tapTree));
+      const claimLeaf = script.findLeaf(r.claimLeaf);
+      const pkScript = bhex(script.pkScript);
+      ensureHandler(sdk);
+      await wallet.contractRepository.saveContract({
+        type: ESCROW_TYPE, params: { pubKey: r.beneficiary, tapTree: r.tapTree, claimLeaf: r.claimLeaf },
+        script: pkScript, address: script.address(prefix, serverX).encode(), state: "active", createdAt: Date.now(),
+      });
+      onStep?.("Recherche du bon dans le coffre…");
+      const { vtxos } = await new sdk.RestIndexerProvider(url).getVtxos({ scripts: [pkScript] });
+      const spend = vtxos.filter((v) => !v.isSpent && !v.spentBy && !v.isUnrolled && v.value > 0);
+      if (!spend.length) throw new Error("aucun VTXO réclamable (déjà encaissé, ou pas encore confirmé)");
+      const tapTree = script.encode();
+      const inputs = spend.map((v) => ({ ...v, tapTree, forfeitTapLeafScript: claimLeaf, intentTapLeafScript: claimLeaf }));
+      const total = spend.reduce((s, v) => s + v.value, 0);
+      const myPk = sdk.ArkAddress.decode(await wallet.getAddress()).pkScript;
+      onStep?.("Signature & soumission…");
+      const { arkTxid } = await wallet.buildAndSubmitOffchainTx(inputs, [{ script: myPk, amount: BigInt(total) }]);
+      return { txid: arkTxid, amount: total };
+    }
 
     /* ---------- custom cursor ---------- */
     const cur = document.getElementById("cur");
@@ -349,12 +442,19 @@
           <div class="ref-lbl">Jeton de réclamation (claim ref)</div>
           <div class="ref" data-ref>${esc(rw.ref)}</div>
           <div class="drawer-actions">
+            <button class="mini solid" data-here data-hot>⚡ Encaisser ici</button>
             <button class="mini" data-copy data-hot>Copier le jeton</button>
-            <button class="mini" data-claimed data-id="${esc(rw.id || "")}" data-hot>J'ai encaissé ✓</button>
+            <button class="mini" data-claimed data-id="${esc(rw.id || "")}" data-hot>Déjà encaissé ✓</button>
           </div>
-          <div class="howto">Ouvre ton <b>wallet / app Pumpstr</b> (ta clé Nostr) et colle ce jeton :
-            il appelle <b>claim(ref)</b>, signe avec <b>ta</b> clé, et crédite ton solde Arkade.
-            Le coffre ne voit jamais ta clé privée.</div>
+          <div class="keypanel" data-panel hidden>
+            <div class="warn">Ta clé privée <b>(nsec)</b> signe <b>localement, dans cet onglet</b> — elle ne touche jamais le coffre ni le réseau. Ne la colle jamais ailleurs.</div>
+            <div class="keydial">
+              <input type="password" data-key placeholder="nsec1…  (ta clé privée Nostr)" autocomplete="off" spellcheck="false" />
+              <button data-sign data-hot>Signer</button>
+            </div>
+            <div class="cstatus" data-cstatus></div>
+          </div>
+          <div class="howto">Self-custody : la signature Arkade se fait <b>chez toi</b>. Alternative — colle le jeton dans ton app Pumpstr / wallet Arkade.</div>
         </div></div></div>
         <div class="redeemed-stamp"><span>Encaissé</span></div>`;
 
@@ -372,8 +472,32 @@
       el.querySelector("[data-claimed]").addEventListener("click", async (e) => {
         const btn = e.target;
         try { await fetch("/api/reward/claimed", { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify({ id: rw.id }) }); } catch {}
-        btn.classList.add("done"); btn.textContent = "encaissé ✓";
+        btn.classList.add("done"); btn.textContent = "marqué ✓";
         el.classList.add("redeemed");
+      });
+      // --- claim signé dans le navigateur (self-custody) ---
+      const panel = el.querySelector("[data-panel]");
+      el.querySelector("[data-here]").addEventListener("click", () => {
+        panel.hidden = !panel.hidden;
+        if (!panel.hidden) el.querySelector("[data-key]").focus();
+      });
+      el.querySelector("[data-sign]").addEventListener("click", async (e) => {
+        const st = el.querySelector("[data-cstatus]"), keyEl = el.querySelector("[data-key]"), btn = e.target;
+        let priv;
+        try { priv = privFromInput(keyEl.value); }
+        catch (err) { st.className = "cstatus err"; st.textContent = err.message; return; }
+        btn.disabled = true; st.className = "cstatus run"; st.textContent = "préparation…";
+        try {
+          const res = await claimInBrowser(rw.ref, priv, (msg) => { st.textContent = msg; });
+          keyEl.value = ""; priv = null; // efface la clé de la mémoire vive
+          st.className = "cstatus ok";
+          st.innerHTML = `Encaissé ✓ · ${fmt(res.amount)} sats crédités · <span class="txid">${esc(res.txid.slice(0, 18))}…</span>`;
+          el.classList.add("redeemed");
+          try { await fetch("/api/reward/claimed", { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify({ id: rw.id }) }); } catch {}
+        } catch (err) {
+          st.className = "cstatus err"; st.textContent = "Échec : " + (err?.message ?? err);
+          btn.disabled = false;
+        }
       });
       return el;
     }
