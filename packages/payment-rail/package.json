@@ -10,6 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
     "verify": "tsx verify-escrow.ts",
     "e2e": "tsx escrow-e2e.ts"
   },

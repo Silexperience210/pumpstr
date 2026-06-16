@@ -43,6 +43,7 @@ import type {
   TapLeafScript,
   Identity,
   IncomingFunds,
+  RelativeTimelock,
 } from "@arkade-os/sdk";
 import { ArkadeSwaps, BoltzSwapProvider } from "@arkade-os/boltz-swap";
 import type {
@@ -109,8 +110,28 @@ function ensureEscrowHandler(): void {
   } as any);
 }
 
+/**
+ * Construit le VtxoScript d'escrow réclamable à 3 feuilles (pur, sans réseau — testable).
+ *   claim  = multisig(bénéficiaire, serveur)              → payout collaboratif
+ *   refund = CLTV(expiry) + multisig(plateforme, serveur) → reprise si non réclamé
+ *   exit   = CSV(exitDelay) + (bénéficiaire)              → sortie unilatérale (self-custody)
+ * Déterministe : mêmes entrées → même script/adresse. Renvoie aussi le hex de la feuille claim.
+ */
+export function buildEscrowVtxoScript(
+  beneficiaryX: Uint8Array,
+  platformX: Uint8Array,
+  serverX: Uint8Array,
+  expiry: bigint,
+  exitDelay: RelativeTimelock,
+): { script: VtxoScript; claim: Uint8Array } {
+  const claim = MultisigTapscript.encode({ pubkeys: [beneficiaryX, serverX] }).script;
+  const refund = CLTVMultisigTapscript.encode({ absoluteTimelock: expiry, pubkeys: [platformX, serverX] }).script;
+  const exit = CSVMultisigTapscript.encode({ timelock: exitDelay, pubkeys: [beneficiaryX] }).script;
+  return { script: new VtxoScript([claim, refund, exit]), claim };
+}
+
 /** Bénéficiaire attendu en **pubkey x-only hex (32 o)** — c'est aussi le pubkey Nostr (ADR-004). */
-function parseBeneficiary(b: string): Uint8Array {
+export function parseBeneficiary(b: string): Uint8Array {
   const t = b.trim();
   if (/^[0-9a-fA-F]{64}$/.test(t)) return fromHex(t);
   throw new Error(
@@ -120,7 +141,7 @@ function parseBeneficiary(b: string): Uint8Array {
 }
 
 // --- Sérialisation du ClaimableRef.id (portable, sans base64 : RN-safe) ---
-interface EscrowRef {
+export interface EscrowRef {
   net: string;
   tapTree: string; // hex de VtxoScript.encode()
   claimLeaf: string; // hex du script de la feuille claim (pour findLeaf)
@@ -130,10 +151,10 @@ interface EscrowRef {
   tx: string; // txid de funding (informatif)
 }
 const REF_TAG = "pumpstr-claim&";
-function encodeRef(r: EscrowRef): string {
+export function encodeRef(r: EscrowRef): string {
   return REF_TAG + Object.entries(r).map(([k, v]) => `${k}=${v}`).join("&");
 }
-function decodeRef(id: string): EscrowRef {
+export function decodeRef(id: string): EscrowRef {
   if (!id.startsWith(REF_TAG)) throw new Error("claim(): ClaimableRef invalide");
   const out: Record<string, string> = {};
   for (const part of id.slice(REF_TAG.length).split("&")) {
@@ -249,19 +270,16 @@ export class ArkadeRail implements PaymentRail {
 
   // ================== SPIKE #2 : reward réclamable ==================
 
-  /** Construit le VtxoScript d'escrow à 3 feuilles (claim/refund/exit). */
+  /** Construit le VtxoScript d'escrow à 3 feuilles, fermé sur la clé serveur de l'opérateur. */
   private async buildEscrowScript(beneficiaryX: Uint8Array, expiry: bigint) {
     const info = await this.getInfo();
-    const serverX = await this.serverXOnly();
-    const platformX = await this.wallet.identity.xOnlyPublicKey();
-
-    const claim = MultisigTapscript.encode({ pubkeys: [beneficiaryX, serverX] }).script;
-    const refund = CLTVMultisigTapscript.encode({ absoluteTimelock: expiry, pubkeys: [platformX, serverX] }).script;
-    const exit = CSVMultisigTapscript.encode({
-      timelock: { type: "seconds", value: info.unilateralExitDelay },
-      pubkeys: [beneficiaryX],
-    }).script;
-    return { script: new VtxoScript([claim, refund, exit]), claim };
+    return buildEscrowVtxoScript(
+      beneficiaryX,
+      await this.wallet.identity.xOnlyPublicKey(),
+      await this.serverXOnly(),
+      expiry,
+      { type: "seconds", value: info.unilateralExitDelay },
+    );
   }
 
   /**
