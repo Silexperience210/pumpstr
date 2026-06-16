@@ -35,6 +35,7 @@ import {
   CSVMultisigTapscript,
   CLTVMultisigTapscript,
   toXOnlySignerHex,
+  contractHandlers,
 } from "@arkade-os/sdk";
 import type {
   ArkInfo,
@@ -81,6 +82,31 @@ export interface ArkadeRailConfig {
    * (ce dont le node a besoin pour corréler identité↔paiement).
    */
   lnAutoClaim?: boolean;
+}
+
+// --- Handler de contrat pour l'escrow réclamable ---------------------------------------------
+// Pour SIGNER un input, le wallet exige que son script soit un contrat connu de son repo (sinon
+// le signer router l'ignore -> "missing tapscript spend sig"). Et pour ANNOTER ce contrat (sync
+// de solde), le SDK appelle `handler.createScript(params).forfeit()/.encode()`. On enregistre donc
+// un handler minimal qui reconstruit le VtxoScript depuis le `tapTree` stocké dans les params et
+// expose `forfeit()` = la feuille claim. Type custom (non descriptor-capable) => signé par l'identité.
+const ESCROW_CONTRACT_TYPE = "pumpstr-escrow";
+function ensureEscrowHandler(): void {
+  if (contractHandlers.has(ESCROW_CONTRACT_TYPE)) return;
+  contractHandlers.register({
+    type: ESCROW_CONTRACT_TYPE,
+    createScript(params: Record<string, string>) {
+      const vtxo = VtxoScript.decode(fromHex(params.tapTree));
+      const leaf = vtxo.findLeaf(params.claimLeaf);
+      (vtxo as any).forfeit = () => leaf; // chemin co-signé (claim)
+      (vtxo as any).exit = () => leaf;
+      return vtxo;
+    },
+    serializeParams: (p: any) => p,
+    deserializeParams: (p: any) => p,
+    selectPath: () => null,
+    getAllSpendingPaths: () => [],
+  } as any);
 }
 
 /** Bénéficiaire attendu en **pubkey x-only hex (32 o)** — c'est aussi le pubkey Nostr (ADR-004). */
@@ -301,6 +327,19 @@ export class ArkadeRail implements PaymentRail {
     const script = VtxoScript.decode(fromHex(r.tapTree));
     const claimLeaf: TapLeafScript = script.findLeaf(r.claimLeaf); // feuille de payout
     const pkScript = toHex(script.pkScript);
+
+    // ⚠️ Sinon "missing tapscript spend sig" : le signer router IGNORE tout input dont le script
+    // n'est pas un contrat connu de son `contractRepository`. On enregistre donc l'escrow comme
+    // contrat (+ son handler) — `params` porte le tapTree+feuille claim pour reconstruire le script.
+    ensureEscrowHandler();
+    await this.wallet.contractRepository.saveContract({
+      type: ESCROW_CONTRACT_TYPE,
+      params: { pubKey: r.beneficiary, tapTree: r.tapTree, claimLeaf: r.claimLeaf },
+      script: pkScript,
+      address: script.address(await this.addressPrefix(), await this.serverXOnly()).encode(),
+      state: "active",
+      createdAt: Date.now(),
+    });
 
     // localise le(s) VTXO(s) parqué(s) à l'adresse d'escrow
     const { vtxos } = await this.indexer.getVtxos({ scripts: [pkScript] });

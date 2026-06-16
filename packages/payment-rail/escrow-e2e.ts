@@ -26,8 +26,10 @@ const FAUCET = process.env.FAUCET_URL ?? "https://faucet.mutinynet.com/api/light
 const FUND_SATS = Number(process.env.FUND_SATS ?? 100_000);
 const ESCROW_SATS = Number(process.env.ESCROW_SATS ?? 50_000);
 const WAIT_SEC = Number(process.env.FUND_WAIT_SEC ?? 600); // attente max du paiement manuel
+const CLAIM_ONLY = process.env.CLAIM_ONLY === "1"; // re-tente le claim sur le ref persisté (gratuit)
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const KEYS_FILE = join(HERE, ".e2e-keys.json");
+const REF_FILE = join(HERE, ".e2e-ref.json");
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const num = (b: bigint) => Number(b);
@@ -106,17 +108,20 @@ async function main() {
   console.log("platform   :", await platform.getAddress());
   console.log("beneficiary:", await bene.getAddress(), "\n            x-only:", beneX, "\n");
 
-  // 1) FUNDING
-  if (!(await ensureFunded(platform, ESCROW_SATS + 5_000))) return;
-
-  // 2) ESCROW
-  console.log(`\n[escrow] escrowClaimable(benef, ${ESCROW_SATS} sats)…`);
-  const ref = await platform.escrowClaimable(beneX, BigInt(ESCROW_SATS));
-  console.log("[escrow] ✅ VTXO réclamable créé. ref:", ref.id.slice(0, 88), "…");
-
-  // 3) CLAIM (le bénéficiaire) — laisse l'indexer voir le VTXO
-  console.log("\n[claim] attente indexation du VTXO d'escrow…");
-  await sleep(4_000);
+  // 1+2) FUNDING + ESCROW  (sauté en CLAIM_ONLY : on rejoue le claim sur le ref persisté)
+  let ref: { id: string };
+  if (CLAIM_ONLY && existsSync(REF_FILE)) {
+    ref = JSON.parse(readFileSync(REF_FILE, "utf8"));
+    console.log("[claim-only] ref rechargé depuis .e2e-ref.json — re-tente le claim\n");
+  } else {
+    if (!(await ensureFunded(platform, ESCROW_SATS + 5_000))) return;
+    console.log(`\n[escrow] escrowClaimable(benef, ${ESCROW_SATS} sats)…`);
+    ref = await platform.escrowClaimable(beneX, BigInt(ESCROW_SATS));
+    writeFileSync(REF_FILE, JSON.stringify(ref));
+    console.log("[escrow] ✅ VTXO réclamable créé (ref persisté). ref:", ref.id.slice(0, 88), "…");
+    console.log("\n[claim] attente indexation du VTXO d'escrow…");
+    await sleep(4_000);
+  }
   const before = num(await bene.getBalance());
   console.log(`[claim] solde bénéficiaire avant: ${before} sats — claim…`);
   let claimErr: any = null;
