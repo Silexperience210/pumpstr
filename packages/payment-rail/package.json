@@ -10,7 +10,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "verify": "tsx verify-escrow.ts"
+    "verify": "tsx verify-escrow.ts",
+    "e2e": "tsx escrow-e2e.ts"
   },
   "dependencies": {
     "@arkade-os/boltz-swap": "^0.3.40",
