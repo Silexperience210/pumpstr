@@ -94,9 +94,14 @@ ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin 
 > Node 22 LTS. Réseau réel requis (opérateur Arkade). Secrets jamais commités (`.creator-key`, `.env` gitignorés).
 
 ## Prochaines étapes (ordre suggéré)
-1. 🟢 **Fait (construct)** — **Spike #2** : VTXO réclamable scripté validé (`spike/escrow.ts`,
-   `spike/SPIKE-2-RESULT.md`). Suite : (a) prouver le **claim collaboratif** avec sats de test, puis
-   (b) implémenter `ArkadeRail.escrowClaimable()`/`claim()` dans `packages/payment-rail` (ADR-007).
+1. 🟢 **Spike #2 fait + RAIL IMPLÉMENTÉ** — VTXO réclamable scripté (`spike/escrow.ts`, `spike/SPIKE-2-RESULT.md`)
+   **ET** `ArkadeRail` écrit dans `packages/payment-rail/src/arkade.ts` (ADR-007) : `escrowClaimable` (construit
+   l'escrow 3 feuilles → `wallet.send` funding → `ClaimableRef` portable) + `claim` (indexer `getVtxos` →
+   `wallet.buildAndSubmitOffchainTx` sur la feuille claim, co-sign serveur) + `previewEscrow` + `send`/`getBalance`/
+   `createLnInvoice`. **Typecheck OK** vs SDK 0.4.36, **`npm run verify` vert** live (escrow dérivé, garde-fous).
+   Suite : **(a)** prouver le **claim collaboratif E2E avec sats de test** (open Q : arkd co-signe-t-il un VtxoScript
+   bespoke ? sinon fallback VHTLC) ; **(b)** brancher le node sur `ArkadeRail` (au lieu d'appeler le SDK en direct) ;
+   **(c)** `exit()` via le flow Unroll (laissé stub).
 2. ✅ **Fait** — détection des tips **temps réel** (`wallet.notifyIncomingFunds`, filtre net) **+ identité Nostr
    du tippeur** : il signe une **zap request NIP-57 (kind 9734)**, le backend la **vérifie** (`verifyEvent`) et
    résout son profil (kind 0 : nom + avatar). Corrélation identité↔paiement LN via `waitAndClaim` (dédup par txid).
