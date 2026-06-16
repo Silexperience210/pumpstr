@@ -1,0 +1,105 @@
+/* ============================================================================
+   PUMPSTR — DESIGN SYSTEM · "PUMP ENERGY"
+   Sats-velocity, hype, Bitcoin. Lime "pump green" (number-go-up) + pop magenta,
+   sur ink profond. Bricolage Grotesque (display) + JetBrains Mono (data/sats).
+   Toutes les pages linkent ce fichier puis utilisent les classes .ps-*.
+   ============================================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=JetBrains+Mono:wght@400;500;700;800&display=swap');
+
+:root{
+  /* — couleur — */
+  --ink:#070a08; --ink-1:#0b110d; --ink-2:#10180f;
+  --surface:rgba(255,255,255,.035); --surface-2:rgba(220,255,200,.06);
+  --line:rgba(188,255,46,.16); --line-2:rgba(255,255,255,.09);
+  --lime:#bcff2e; --lime-soft:#d8ff7a; --lime-deep:#74cf00;
+  --magenta:#ff2e93; --amber:#ffb13b;
+  --txt:#eafef0; --txt-dim:#9cb79e; --txt-faint:#5e7560;
+  /* — typo — */
+  --display:'Bricolage Grotesque',ui-sans-serif,system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  /* — forme / motion — */
+  --r:16px; --r-sm:10px; --r-lg:24px; --r-pill:100px;
+  --ease:cubic-bezier(.2,.8,.2,1); --spring:cubic-bezier(.34,1.5,.5,1);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; min-height:100svh; background:var(--ink); color:var(--txt);
+  font-family:var(--mono); font-size:15px; line-height:1.55;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; overflow-x:hidden;
+}
+::selection{ background:var(--lime); color:#06200a; }
+
+/* — décor : aurora mesh animée + grain — */
+.ps-bg{ position:fixed; inset:0; z-index:-3; overflow:hidden; background:
+  radial-gradient(120% 80% at 50% -20%, #0e1a0e 0%, var(--ink) 60%); }
+.ps-bg::before,.ps-bg::after{ content:""; position:absolute; border-radius:50%; filter:blur(90px); mix-blend-mode:screen; }
+.ps-bg::before{ width:64vw; height:64vw; left:-12vw; top:-22vh; opacity:.42;
+  background:radial-gradient(circle,#8bff2e,transparent 64%); animation:psFloatA 26s var(--ease) infinite alternate; }
+.ps-bg::after{ width:54vw; height:54vw; right:-14vw; bottom:-18vh; opacity:.3;
+  background:radial-gradient(circle,#ff2e93,transparent 60%); animation:psFloatB 32s var(--ease) infinite alternate; }
+.ps-grain{ position:fixed; inset:0; z-index:-2; pointer-events:none; opacity:.38; mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+@keyframes psFloatA{ to{ transform:translate(9vw,11vh) scale(1.18) } }
+@keyframes psFloatB{ to{ transform:translate(-8vw,-9vh) scale(1.22) } }
+
+/* — typo helpers — */
+.ps-display{ font-family:var(--display); font-weight:780; letter-spacing:-.035em; line-height:.9; }
+.ps-num{ font-family:var(--mono); font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:-.03em; }
+.ps-kicker{ font-family:var(--mono); font-size:11px; font-weight:500; letter-spacing:.36em; text-transform:uppercase; color:var(--txt-faint); }
+.ps-dim{ color:var(--txt-dim); } .ps-faint{ color:var(--txt-faint); }
+
+/* — LE chiffre de sats : héros lumineux + pulse "pump" — */
+.ps-sats{ font-family:var(--mono); font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:-.04em;
+  color:var(--lime); text-shadow:0 0 26px rgba(188,255,46,.45); }
+.ps-sats .u{ font-weight:500; font-size:.26em; letter-spacing:.18em; color:var(--lime-soft); opacity:.8; }
+.ps-pulse{ animation:psPump 2.6s var(--ease) infinite; transform-origin:left center; }
+@keyframes psPump{ 0%,100%{ text-shadow:0 0 22px rgba(188,255,46,.35) } 50%{ text-shadow:0 0 40px rgba(188,255,46,.8) } }
+
+/* — surfaces — */
+.ps-card{ position:relative; background:linear-gradient(180deg,var(--surface-2),var(--surface));
+  border:1px solid var(--line-2); border-radius:var(--r); backdrop-filter:blur(16px);
+  box-shadow:0 36px 70px -46px #000, inset 0 1px 0 rgba(255,255,255,.07); transition:border-color .25s, transform .25s var(--ease), box-shadow .3s; }
+.ps-card:hover{ border-color:var(--line); box-shadow:0 44px 80px -44px #000, 0 0 0 1px rgba(188,255,46,.18), inset 0 1px 0 rgba(255,255,255,.08); }
+.ps-card--glow::after{ content:""; position:absolute; inset:-1px; border-radius:inherit; pointer-events:none;
+  background:radial-gradient(60% 100% at 50% 0,rgba(188,255,46,.10),transparent 70%); }
+
+/* — boutons — */
+.ps-btn{ font-family:var(--mono); font-weight:700; font-size:13px; letter-spacing:.05em; text-transform:uppercase;
+  border:0; border-radius:var(--r-sm); padding:14px 22px; cursor:pointer; display:inline-flex; align-items:center; gap:8px;
+  transition:transform .14s var(--spring), box-shadow .25s, filter .2s, border-color .2s, color .2s; }
+.ps-btn:active{ transform:scale(.95); }
+.ps-btn--pump{ background:var(--lime); color:#06200a; }
+.ps-btn--pump:hover{ transform:translateY(-2px); box-shadow:0 10px 34px -8px rgba(188,255,46,.65); filter:brightness(1.06); }
+.ps-btn--ghost{ background:rgba(255,255,255,.02); color:var(--txt); border:1px solid var(--line-2); }
+.ps-btn--ghost:hover{ border-color:var(--lime); color:var(--lime); }
+.ps-btn--mag{ background:transparent; color:var(--magenta); border:1px solid rgba(255,46,147,.4); }
+.ps-btn--mag:hover{ background:var(--magenta); color:#fff; box-shadow:0 10px 30px -10px rgba(255,46,147,.6); }
+.ps-btn:disabled{ opacity:.45; cursor:default; transform:none; box-shadow:none; }
+
+/* — champs — */
+.ps-input{ font-family:var(--mono); font-size:14px; color:var(--txt); background:rgba(0,0,0,.4);
+  border:1px solid var(--line-2); border-radius:var(--r-sm); padding:15px 16px; width:100%;
+  transition:border-color .2s, box-shadow .2s; }
+.ps-input::placeholder{ color:var(--txt-faint); }
+.ps-input:focus{ outline:none; border-color:var(--lime); box-shadow:0 0 0 3px rgba(188,255,46,.15); }
+.ps-field{ display:flex; gap:10px; flex-wrap:wrap; }
+.ps-field .ps-input{ flex:1; min-width:200px; }
+
+/* — pills / badges — */
+.ps-pill{ display:inline-flex; align-items:center; gap:7px; font-family:var(--mono); font-size:11px; font-weight:500;
+  letter-spacing:.12em; text-transform:uppercase; padding:7px 13px; border-radius:var(--r-pill); border:1px solid var(--line-2); color:var(--txt-dim); }
+.ps-pill--live{ color:var(--lime); border-color:rgba(188,255,46,.4); }
+.ps-pill--live::before{ content:""; width:7px; height:7px; border-radius:50%; background:var(--lime); box-shadow:0 0 12px var(--lime); animation:psBlink 1.5s infinite; }
+@keyframes psBlink{ 50%{ opacity:.25 } }
+
+/* — révélation au chargement (stagger via style="animation-delay") — */
+.ps-rise{ opacity:0; transform:translateY(20px); animation:psRise .85s var(--ease) forwards; }
+@keyframes psRise{ to{ opacity:1; transform:none } }
+
+/* — divers — */
+.ps-link{ color:var(--lime); text-decoration:none; } .ps-link:hover{ color:var(--lime-soft); }
+.ps-hr{ height:1px; background:var(--line-2); border:0; margin:0; }
+.ps-mono{ font-family:var(--mono); } .ps-break{ word-break:break-all; }
+
+@media (prefers-reduced-motion:reduce){ *{ animation-duration:.001ms !important; } .ps-bg::before,.ps-bg::after{ animation:none } }
