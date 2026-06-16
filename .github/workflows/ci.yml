@@ -6,19 +6,16 @@ on:
   pull_request:
 
 jobs:
-  payment-rail:
-    name: payment-rail — typecheck + tests
+  workspace:
+    name: typecheck + tests (rail · node · portal)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: packages/payment-rail
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22" # engine du SDK Arkade (>=22.12 <25)
-      # npm install (pas `ci`) : le lock est généré sous Windows, `ci` casserait sur les
-      # binaires optionnels spécifiques plateforme. Les tests sont purs (aucun opérateur requis).
+      # npm install (pas `ci`) : le lock peut être généré sous Windows ; `ci` casserait sur
+      # les binaires optionnels spécifiques plateforme. Les tests sont purs / mockés (pas d'opérateur).
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
       - run: npm test
