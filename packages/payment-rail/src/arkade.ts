@@ -41,6 +41,7 @@ import type {
   ExtendedVirtualCoin,
   TapLeafScript,
   Identity,
+  IncomingFunds,
 } from "@arkade-os/sdk";
 import { ArkadeSwaps, BoltzSwapProvider } from "@arkade-os/boltz-swap";
 import type {
@@ -62,6 +63,7 @@ const DEFAULTS = {
   arkServerUrl: "https://mutinynet.arkade.sh",
   boltzNetwork: "mutinynet" as const,
   defaultEscrowTtlSec: 30 * 24 * 3600, // 30 jours
+  lnAutoClaim: true,
 };
 
 export interface ArkadeRailConfig {
@@ -73,6 +75,12 @@ export interface ArkadeRailConfig {
   boltzNetwork?: "bitcoin" | "mutinynet" | "regtest";
   /** TTL d'escrow par défaut (s) si `opts.expiresAt` absent. */
   defaultEscrowTtlSec?: number;
+  /**
+   * `true` (défaut) : Boltz auto-claim le LN-in (les fonds tombent seuls — usage générique).
+   * `false` : pas d'auto-claim ; le caller règle explicitement via `createLnInvoiceWithSettle().settle()`
+   * (ce dont le node a besoin pour corréler identité↔paiement).
+   */
+  lnAutoClaim?: boolean;
 }
 
 /** Bénéficiaire attendu en **pubkey x-only hex (32 o)** — c'est aussi le pubkey Nostr (ADR-004). */
@@ -114,6 +122,7 @@ function decodeRef(id: string): EscrowRef {
 
 export class ArkadeRail implements PaymentRail {
   private info?: ArkInfo;
+  private swaps?: ArkadeSwaps; // instance Boltz unique, paresseuse
 
   private constructor(
     private readonly wallet: Wallet,
@@ -129,6 +138,7 @@ export class ArkadeRail implements PaymentRail {
       indexerUrl: cfg.indexerUrl ?? cfg.arkServerUrl ?? DEFAULTS.arkServerUrl,
       boltzNetwork: cfg.boltzNetwork ?? DEFAULTS.boltzNetwork,
       defaultEscrowTtlSec: cfg.defaultEscrowTtlSec ?? DEFAULTS.defaultEscrowTtlSec,
+      lnAutoClaim: cfg.lnAutoClaim ?? DEFAULTS.lnAutoClaim,
     };
     const wallet = await Wallet.create({ identity, arkServerUrl: full.arkServerUrl });
     return new ArkadeRail(wallet, new RestArkProvider(full.arkServerUrl), new RestIndexerProvider(full.indexerUrl), full);
@@ -166,16 +176,49 @@ export class ArkadeRail implements PaymentRail {
     const id = await this.wallet.send({ address: toAddress, amount: Number(amount) });
     return { id, status: "settled" };
   }
-  async createLnInvoice(amount: Sats, memo?: string): Promise<{ bolt11: string }> {
-    const swaps = new ArkadeSwaps({
+  /** Instance Boltz unique (réutilisée). `swapManager` suit `cfg.lnAutoClaim`. */
+  private getSwaps(): ArkadeSwaps {
+    return (this.swaps ??= new ArkadeSwaps({
       wallet: this.wallet,
       swapProvider: new BoltzSwapProvider({ network: this.cfg.boltzNetwork }),
-      swapManager: true,
-    });
-    const res = (await swaps.createLightningInvoice({ amount: Number(amount), description: memo } as any)) as any;
+      swapManager: this.cfg.lnAutoClaim,
+    }));
+  }
+
+  async createLnInvoice(amount: Sats, memo?: string): Promise<{ bolt11: string }> {
+    const { bolt11 } = await this.createLnInvoiceWithSettle(amount, memo);
+    return { bolt11 };
+  }
+
+  /**
+   * LN-in avec **poignée de règlement** : renvoie la facture ET `settle()` qui attend le
+   * paiement puis claim le VTXO (`waitAndClaim`) → `{ txid }`. Garde Boltz encapsulé. À utiliser
+   * avec `lnAutoClaim:false` (sinon l'auto-claim et `settle()` se marchent dessus). Le node s'en
+   * sert pour corréler identité↔paiement (qui a payé quelle facture) avant de créditer le tip.
+   */
+  async createLnInvoiceWithSettle(
+    amount: Sats,
+    description?: string,
+  ): Promise<{ bolt11: string; settle: () => Promise<{ txid: string }> }> {
+    const swaps = this.getSwaps();
+    const res = (await swaps.createLightningInvoice({ amount: Number(amount), description } as any)) as any;
     const bolt11 = res?.invoice ?? res?.bolt11 ?? res?.paymentRequest;
     if (!bolt11) throw new Error("createLnInvoice: pas de BOLT11 retourné par Boltz");
-    return { bolt11 };
+    const pendingSwap = res?.pendingSwap ?? res;
+    const settle = async () => {
+      const cl = (await (swaps as any).waitAndClaim(pendingSwap)) as { txid?: string };
+      return { txid: cl?.txid ?? "" };
+    };
+    return { bolt11, settle };
+  }
+
+  /**
+   * S'abonne aux **fonds entrants temps réel** (tips). Le callback reçoit `{newVtxos, spentVtxos}`
+   * (off-chain) ou `{coins}` (on-chain) ; compter le net = Σnew − Σspent. Renvoie un `unsub()`.
+   * Hors `PaymentRail` (orchestration spécifique Arkade) — utilisé par le host node.
+   */
+  onIncomingFunds(cb: (funds: IncomingFunds) => void): Promise<() => void> {
+    return this.wallet.notifyIncomingFunds(cb);
   }
 
   // ================== SPIKE #2 : reward réclamable ==================

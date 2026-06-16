@@ -99,9 +99,11 @@ ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin 
    l'escrow 3 feuilles → `wallet.send` funding → `ClaimableRef` portable) + `claim` (indexer `getVtxos` →
    `wallet.buildAndSubmitOffchainTx` sur la feuille claim, co-sign serveur) + `previewEscrow` + `send`/`getBalance`/
    `createLnInvoice`. **Typecheck OK** vs SDK 0.4.36, **`npm run verify` vert** live (escrow dérivé, garde-fous).
-   Suite : **(a)** prouver le **claim collaboratif E2E avec sats de test** (open Q : arkd co-signe-t-il un VtxoScript
-   bespoke ? sinon fallback VHTLC) ; **(b)** brancher le node sur `ArkadeRail` (au lieu d'appeler le SDK en direct) ;
-   **(c)** `exit()` via le flow Unroll (laissé stub).
+   ✅ **(b) FAIT — node branché sur `ArkadeRail`** : `node/server.ts` n'importe plus le SDK ; tout le money passe
+   par le rail (`getAddress`, `onIncomingFunds`, `createLnInvoiceWithSettle`). Identité `.creator-key` préservée
+   (même adresse/npub). ADR-007 bouclé côté produit. Suite : **(a)** prouver le **claim collaboratif E2E avec
+   sats de test** (open Q : arkd co-signe-t-il un VtxoScript bespoke ? sinon fallback VHTLC) ; **(c)** `exit()`
+   via le flow Unroll (stub).
 2. ✅ **Fait** — détection des tips **temps réel** (`wallet.notifyIncomingFunds`, filtre net) **+ identité Nostr
    du tippeur** : il signe une **zap request NIP-57 (kind 9734)**, le backend la **vérifie** (`verifyEvent`) et
    résout son profil (kind 0 : nom + avatar). Corrélation identité↔paiement LN via `waitAndClaim` (dédup par txid).

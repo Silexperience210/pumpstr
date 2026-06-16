@@ -22,8 +22,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
-import { SingleKey, Wallet } from "@arkade-os/sdk";
-import { ArkadeSwaps, BoltzSwapProvider } from "@arkade-os/boltz-swap";
+import { ArkadeRail } from "@pumpstr/payment-rail/arkade"; // ADR-007 : tout le money passe par le rail
 import { SimplePool, getPublicKey, verifyEvent, finalizeEvent, nip19 } from "nostr-tools";
 
 // notifyIncomingFunds démarre aussi un watcher ON-CHAIN (Electrum WS) qui boucle en
@@ -134,20 +133,20 @@ async function tipperFromBody(body: any, via: string): Promise<Tipper> {
   return { name: (body?.name || "anon").toString().slice(0, 24), comment: (body?.comment ?? "").toString().slice(0, 140), via };
 }
 
-// ---------- Arkade (le vrai rail) ----------
+// ---------- Arkade via le PaymentRail (ADR-007) ----------
+// La MÊME clé dérive le wallet Arkade (rail) ET l'identité Nostr (ici) — ADR-004.
 console.log(`[arkade] connexion à ${ARK_SERVER_URL} ...`);
 const keyHex = loadOrCreateKeyHex();
-const identity = SingleKey.fromHex(keyHex);
 const creatorSk = Uint8Array.from(Buffer.from(keyHex, "hex"));
-const creatorPubkey = getPublicKey(creatorSk); // MÊME clé -> wallet Arkade + Nostr (ADR-004)
+const creatorPubkey = getPublicKey(creatorSk);
 const creatorNpub = nip19.npubEncode(creatorPubkey);
-const wallet = await Wallet.create({ identity, arkServerUrl: ARK_SERVER_URL });
-creatorAddress = await wallet.getAddress();
-const swaps = new ArkadeSwaps({
-  wallet,
-  swapProvider: new BoltzSwapProvider({ network: BOLTZ_NETWORK as any }),
-  swapManager: false, // on claim explicitement par facture (waitAndClaim) -> corrélation identité fiable
+// lnAutoClaim:false -> on règle explicitement (settle) pour corréler identité↔paiement.
+const rail = await ArkadeRail.fromSeed(keyHex, {
+  arkServerUrl: ARK_SERVER_URL,
+  boltzNetwork: BOLTZ_NETWORK as any,
+  lnAutoClaim: false,
 });
+creatorAddress = await rail.getAddress();
 console.log(`[arkade] créateur prêt`);
 console.log(`         adresse : ${creatorAddress}`);
 console.log(`         npub    : ${creatorNpub}`);
@@ -257,7 +256,7 @@ const sumValue = (coins: any[] = []) => coins.reduce((s, c) => s + Number(c?.val
 
 let stopWatch: (() => void) | undefined;
 try {
-  stopWatch = await (wallet as any).notifyIncomingFunds((funds: any) => {
+  stopWatch = await rail.onIncomingFunds((funds: any) => {
     if (Array.isArray(funds?.newVtxos)) {
       const fresh = funds.newVtxos.filter((v: any) => !claimedTxids.has(v.txid));
       for (const v of funds.newVtxos) claimedTxids.delete(v.txid);
@@ -298,16 +297,16 @@ function readBody(req: any): Promise<string> {
 }
 const parseJson = (s: string): any => { try { return JSON.parse(s || "{}"); } catch { return {}; } };
 
-// Règle un swap LN-in : à la confirmation, fire le tip identifié + publie le zap receipt 9735.
-function settleAndZap(pendingSwap: any, bolt11: string | null, amount: number, tipper: Tipper, zapRequest?: any) {
-  if (!pendingSwap || typeof (swaps as any).waitAndClaim !== "function") return;
-  (swaps as any).waitAndClaim(pendingSwap)
-    .then((cl: any) => {
+// Règle un swap LN-in : à la confirmation (settle du rail), fire le tip identifié + zap receipt 9735.
+function settleAndZap(settle: (() => Promise<{ txid: string }>) | null, bolt11: string | null, amount: number, tipper: Tipper, zapRequest?: any) {
+  if (!settle) return;
+  settle()
+    .then((cl) => {
       if (cl?.txid) claimedTxids.add(cl.txid);
       registerTip(amount, tipper);
       if (zapRequest && bolt11) publishZapReceipt(zapRequest, bolt11, amount);
     })
-    .catch((e: any) => console.error("[ln] waitAndClaim:", e?.message ?? e));
+    .catch((e: any) => console.error("[ln] settle:", e?.message ?? e));
 }
 
 const server = createServer(async (req, res) => {
@@ -345,11 +344,9 @@ const server = createServer(async (req, res) => {
       // NIP-57 : description = la zap request (sinon les métadonnées LUD-06). NB : Boltz ne pose pas
       // de description_hash strict -> vérif NIP-57 stricte best-effort ; le reçu 9735 reste signé+publié.
       const description = zapRequest ? JSON.stringify(zapRequest) : lnMetadata;
-      const r: any = await swaps.createLightningInvoice({ amount: sats, description });
-      const bolt11 = r?.invoice ?? r?.bolt11 ?? r?.paymentRequest ?? null;
-      if (!bolt11) throw new Error("pas de facture");
+      const { bolt11, settle } = await rail.createLnInvoiceWithSettle(BigInt(sats), description);
       const tipper = await tipperFromBody({ zapRequest, comment }, "lnaddr");
-      settleAndZap(r?.pendingSwap ?? r, bolt11, sats, tipper, zapRequest);
+      settleAndZap(settle, bolt11, sats, tipper, zapRequest);
       return sendJson(res, 200, { pr: bolt11, routes: [] });
     } catch (e: any) {
       return sendJson(res, 200, { status: "ERROR", reason: e?.message ?? String(e) });
@@ -366,9 +363,8 @@ const server = createServer(async (req, res) => {
     const zapRequest = body?.zapRequest;
     const tipper = await tipperFromBody(body, "ln");
     try {
-      const r: any = await swaps.createLightningInvoice({ amount, description: zapRequest ? JSON.stringify(zapRequest) : "Tip Pumpstr" });
-      const bolt11 = r?.invoice ?? r?.bolt11 ?? r?.paymentRequest ?? null;
-      settleAndZap(r?.pendingSwap ?? r, bolt11, amount, tipper, zapRequest);
+      const { bolt11, settle } = await rail.createLnInvoiceWithSettle(BigInt(amount), zapRequest ? JSON.stringify(zapRequest) : "Tip Pumpstr");
+      settleAndZap(settle, bolt11, amount, tipper, zapRequest);
       return sendJson(res, 200, { bolt11, amount });
     } catch (e: any) {
       return sendJson(res, 502, { error: e?.message ?? String(e) });
