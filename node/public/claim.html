@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pumpstr — Réclamer un reward</title>
+  <style>
+    :root { --bg:#0a0a0f; --card:#14141c; --neon:#7df9ff; --gold:#ffd23f; --txt:#e8e8f0; --dim:#8a8aa0; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:radial-gradient(1200px 600px at 50% -10%, #1a1030, var(--bg)); color:var(--txt);
+           font:15px/1.5 ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif; min-height:100vh; }
+    .wrap { max-width:620px; margin:0 auto; padding:32px 18px 60px; }
+    h1 { font-size:26px; margin:0 0 4px; letter-spacing:.5px; }
+    h1 .z { color:var(--gold); }
+    .sub { color:var(--dim); margin:0 0 24px; }
+    .row { display:flex; gap:8px; }
+    input { flex:1; background:var(--card); border:1px solid #2a2a3a; color:var(--txt); border-radius:10px; padding:12px 14px; font-size:14px; }
+    input:focus { outline:none; border-color:var(--neon); }
+    button { background:var(--neon); color:#04141a; border:0; border-radius:10px; padding:12px 18px; font-weight:700; cursor:pointer; }
+    button:disabled { opacity:.5; cursor:default; }
+    .card { background:var(--card); border:1px solid #2a2a3a; border-radius:14px; padding:16px; margin:14px 0; }
+    .amt { font-size:22px; font-weight:800; color:var(--gold); }
+    .reason { color:var(--dim); margin:2px 0 10px; }
+    .ref { font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; word-break:break-all; background:#0d0d14;
+           border:1px dashed #2a2a3a; border-radius:8px; padding:10px; color:var(--neon); }
+    .mini { background:#23233200; border:1px solid #2a2a3a; color:var(--txt); padding:6px 10px; font-size:12px; font-weight:600; margin-top:8px; }
+    .empty, .err { color:var(--dim); text-align:center; padding:24px 0; }
+    .err { color:#ff7d7d; }
+    .how { font-size:13px; color:var(--dim); margin-top:8px; }
+    .how b { color:var(--txt); }
+    a { color:var(--neon); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🎁 Tes <span class="z">rewards</span> Pumpstr</h1>
+    <p class="sub">Des sats parqués pour toi en escrow. Réclamables avec <b>ta</b> clé — self-custody, personne ne les tient.</p>
+
+    <div class="row">
+      <input id="npub" placeholder="ton npub… (npub1…)" autocomplete="off" spellcheck="false" />
+      <button id="go">Voir</button>
+    </div>
+
+    <div id="out"></div>
+  </div>
+
+  <script type="module">
+    import { nip19 } from "https://esm.sh/nostr-tools@2.7.2";
+    const $ = (s) => document.querySelector(s);
+    const out = $("#out"), input = $("#npub");
+    const params = new URLSearchParams(location.search);
+    const pre = params.get("to") || params.get("npub");
+    if (pre) input.value = pre;
+
+    function fmtAmt(n) { return new Intl.NumberFormat("fr-FR").format(n); }
+
+    async function load() {
+      const v = input.value.trim();
+      if (!v) return;
+      out.innerHTML = `<div class="empty">chargement…</div>`;
+      let r;
+      try {
+        r = await fetch(`/api/rewards?to=${encodeURIComponent(v)}`).then((x) => x.json());
+      } catch (e) { out.innerHTML = `<div class="err">réseau indisponible</div>`; return; }
+      if (r.error) { out.innerHTML = `<div class="err">${r.error}</div>`; return; }
+      if (!r.rewards.length) { out.innerHTML = `<div class="empty">Aucun reward réclamable pour l'instant.</div>`; return; }
+
+      out.innerHTML = r.rewards.map((rw) => `
+        <div class="card">
+          <div class="amt">⚡ ${fmtAmt(rw.amount)} sats</div>
+          ${rw.reason ? `<div class="reason">${rw.reason.replace(/</g, "&lt;")}</div>` : ""}
+          <div class="ref" data-ref>${rw.ref}</div>
+          <button class="mini" data-copy>Copier le ref</button>
+          <div class="how">Pour encaisser : ouvre ton <b>wallet / app Pumpstr</b> (ta clé Nostr) et colle ce
+            ref — ton wallet appelle <b>claim(ref)</b> et crédite ton solde Arkade. Le node ne touche jamais ta clé.</div>
+        </div>`).join("");
+
+      out.querySelectorAll("[data-copy]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const ref = btn.parentElement.querySelector("[data-ref]").textContent;
+          navigator.clipboard?.writeText(ref);
+          btn.textContent = "✓ copié";
+          setTimeout(() => (btn.textContent = "Copier le ref"), 1500);
+        });
+      });
+    }
+
+    $("#go").addEventListener("click", load);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") load(); });
+    if (pre) load();
+  </script>
+</body>
+</html>

@@ -1,3 +1,5 @@
 node_modules/
 .creator-key
+.rewards.json
+.env
 *.log

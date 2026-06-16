@@ -80,6 +80,13 @@ const LN_ADDRESS_BASE = (process.env.LN_ADDRESS_BASE_URL || `http://localhost:${
 const lnAddress = `${LN_ADDRESS_USER}@${LN_ADDRESS_BASE.replace(/^https?:\/\//, "")}`;
 const lnMetadata = JSON.stringify([["text/plain", `Tip ⚡ ${lnAddress} (Pumpstr)`], ["text/identifier", lnAddress]]);
 
+// --- Rewards : escrow réclamable (ADR-004/006). Le créateur récompense un bénéficiaire (npub),
+// potentiellement offline ; les sats sont parqués dans un VTXO que LUI SEUL réclame (sa clé). ---
+const REWARDS_FILE = process.env.REWARDS_FILE ?? join(HERE, ".rewards.json"); // état runtime (volume)
+const PLATFORM_SPLIT_BPS = Number(process.env.PLATFORM_SPLIT_BPS ?? 0);        // part plateforme (ADR-006)
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";                            // si défini : requis pour créer
+const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL || LN_ADDRESS_BASE).replace(/\/$/, "");
+
 function loadOrCreateKeyHex(): string {
   if (existsSync(KEY_FILE)) return readFileSync(KEY_FILE, "utf8").trim();
   const b = new Uint8Array(32);
@@ -93,6 +100,23 @@ function loadOrCreateKeyHex(): string {
 type Tipper = { name: string; pubkey?: string; picture?: string; comment?: string; via: string };
 let creatorAddress = "";
 const recentTips: { amount: number; name: string; picture?: string; at: number }[] = [];
+
+// ---------- Rewards (escrow réclamable) ----------
+type Reward = { id: string; to: string; npub: string; amount: number; reason: string; ref: string; createdAt: number; claimed: boolean };
+function loadRewards(): Reward[] {
+  try { return existsSync(REWARDS_FILE) ? JSON.parse(readFileSync(REWARDS_FILE, "utf8")) : []; } catch { return []; }
+}
+const rewards: Reward[] = loadRewards();
+function saveRewards() {
+  try { writeFileSync(REWARDS_FILE, JSON.stringify(rewards)); } catch (e: any) { console.error("[reward] save:", e?.message ?? e); }
+}
+/** npub OU pubkey x-only hex -> pubkey hex (la clé Nostr = clé de claim Arkade, ADR-004). */
+function pubkeyHexFrom(s: string): string | null {
+  const t = (s || "").trim();
+  if (/^[0-9a-fA-F]{64}$/.test(t)) return t.toLowerCase();
+  try { const d = nip19.decode(t); if (d.type === "npub") return d.data as string; } catch { /* pas un npub */ }
+  return null;
+}
 
 // ---------- Nostr (résolution de profil + vérif des zap requests) ----------
 const pool = new SimplePool();
@@ -214,6 +238,24 @@ async function publishZapReceipt(zapRequest: any, bolt11: string, amountSats: nu
     console.log(`[nostr] zap receipt 9735 publié (${amountSats} sats)`);
   } catch (e: any) {
     console.error("[nostr] zap receipt:", e?.message ?? e);
+  }
+}
+
+// ---------- NIP : notifier le bénéficiaire d'un reward (kind:1 le taguant) ----------
+// Le ref n'est pas un secret (le VTXO n'est réclamable que par la clé du bénéficiaire) ; on
+// pointe quand même vers une page de claim plutôt que de l'exposer en clair dans la note.
+async function publishRewardNote(pubkey: string, amount: number, claimUrl: string, reason: string) {
+  try {
+    const note = finalizeEvent({
+      kind: 1,
+      created_at: Math.floor(Date.now() / 1000),
+      content: `🎁 Tu as reçu un reward Pumpstr de ${amount} sats${reason ? ` — ${reason}` : ""}. Réclame-le (self-custody) : ${claimUrl}`,
+      tags: [["p", pubkey], ["t", "pumpstr"], ["t", "pumpstrreward"]],
+    }, creatorSk);
+    await Promise.any(pool.publish(RELAYS, note));
+    console.log(`[reward] note Nostr -> ${shortNpub(pubkey)} (${amount} sats)`);
+  } catch (e: any) {
+    console.error("[reward] note:", e?.message ?? e);
   }
 }
 
@@ -369,6 +411,57 @@ const server = createServer(async (req, res) => {
     } catch (e: any) {
       return sendJson(res, 502, { error: e?.message ?? String(e) });
     }
+  }
+
+  // ----- Rewards : le créateur parque des sats pour un bénéficiaire (escrow réclamable) -----
+  if (url.pathname === "/api/reward" && req.method === "POST") {
+    if (ADMIN_TOKEN && req.headers["x-admin-token"] !== ADMIN_TOKEN) {
+      return sendJson(res, 401, { error: "x-admin-token requis" });
+    }
+    const body = parseJson(await readBody(req));
+    const pubkey = pubkeyHexFrom(body.to);
+    const amount = Math.floor(Number(body.amount) || 0);
+    if (!pubkey) return sendJson(res, 400, { error: "'to' invalide (npub ou pubkey x-only hex)" });
+    if (amount < 330) return sendJson(res, 400, { error: "montant < dust (330 sats)" });
+    try {
+      // escrow via le rail (fonds du créateur) ; le bénéficiaire claim plus tard avec SA clé
+      const ref = await rail.escrowClaimable(pubkey, BigInt(amount), { splitToPlatformBps: PLATFORM_SPLIT_BPS });
+      const npub = nip19.npubEncode(pubkey);
+      const reward: Reward = {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        to: pubkey, npub, amount, reason: (body.reason ?? "").toString().slice(0, 140),
+        ref: ref.id, createdAt: Date.now(), claimed: false,
+      };
+      rewards.unshift(reward);
+      if (rewards.length > 500) rewards.length = 500;
+      saveRewards();
+      const claimUrl = `${PUBLIC_BASE}/claim.html?to=${npub}`;
+      publishRewardNote(pubkey, amount, claimUrl, reward.reason);
+      console.log(`[reward] +${amount} sats -> ${shortNpub(pubkey)} (escrow créé, id ${reward.id})`);
+      return sendJson(res, 200, { id: reward.id, to: npub, amount, ref: ref.id, claimUrl });
+    } catch (e: any) {
+      const msg = String(e?.message ?? e);
+      const code = /insufficient|fund|solde|dust/i.test(msg) ? 400 : 502;
+      return sendJson(res, code, { error: msg });
+    }
+  }
+
+  // Rewards réclamables d'un bénéficiaire : son client récupère le `ref` puis claim côté wallet.
+  if (url.pathname === "/api/rewards") {
+    const pk = pubkeyHexFrom(url.searchParams.get("pubkey") || url.searchParams.get("to") || "");
+    if (!pk) return sendJson(res, 400, { error: "pubkey/npub requis" });
+    const mine = rewards
+      .filter((r) => r.to === pk && !r.claimed)
+      .map((r) => ({ id: r.id, amount: r.amount, reason: r.reason, ref: r.ref, createdAt: r.createdAt }));
+    return sendJson(res, 200, { pubkey: pk, count: mine.length, rewards: mine });
+  }
+
+  // Bookkeeping best-effort : le client signale qu'un reward a été réclamé.
+  if (url.pathname === "/api/reward/claimed" && req.method === "POST") {
+    const body = parseJson(await readBody(req));
+    const r = rewards.find((x) => x.id === body.id);
+    if (r && !r.claimed) { r.claimed = true; saveRewards(); console.log(`[reward] ${r.id} marqué réclamé`); }
+    return sendJson(res, 200, { ok: !!r });
   }
 
   if (url.pathname === "/api/simulate" && req.method === "POST") {

@@ -104,8 +104,11 @@ ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin 
    ✅ **(a) CLAIM E2E PROUVÉ (vrais sats)** : `escrowClaimable→claim` validé live mutinynet (`packages/payment-rail/
    escrow-e2e.ts`), bénéficiaire +15 000 sats, `arkTxid` settled. **Open Q tranchée : arkd co-signe un VtxoScript
    bespoke.** Fix clé dans `claim()` : enregistrer l'escrow comme contrat (`wallet.contractRepository.saveContract`,
-   type custom → signer identité) + un `contractHandlers.register` minimal (sinon la sync de solde crashe). Reste :
-   **(c)** `exit()` via Unroll (stub) ; brancher escrowClaimable/claim dans un vrai flux produit (rewards).
+   type custom → signer identité) + un `contractHandlers.register` minimal (sinon la sync de solde crashe).
+   ✅ **Flux reward produit câblé (node)** : `POST /api/reward {to:npub, amount, reason}` → `rail.escrowClaimable`
+   → persiste `.rewards.json` + **note Nostr** (kind:1 taguant le bénéficiaire) + renvoie ref+claimUrl ;
+   `GET /api/rewards?to=npub` liste les refs ; `/claim.html` les affiche (claim = côté wallet bénéficiaire). Gate
+   `ADMIN_TOKEN`, split `PLATFORM_SPLIT_BPS`. Reste : **(c)** `exit()` via Unroll (stub) ; claim in-browser dans `claim.html`.
 2. ✅ **Fait** — détection des tips **temps réel** (`wallet.notifyIncomingFunds`, filtre net) **+ identité Nostr
    du tippeur** : il signe une **zap request NIP-57 (kind 9734)**, le backend la **vérifie** (`verifyEvent`) et
    résout son profil (kind 0 : nom + avatar). Corrélation identité↔paiement LN via `waitAndClaim` (dédup par txid).
