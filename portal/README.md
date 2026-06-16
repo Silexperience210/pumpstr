@@ -1,35 +1,48 @@
-# Pumpstr — portal
+# Portal — Portail fédéré Pumpstr
 
-Le « site » qui agrège tous les lives. **Un client Nostr + un indexer. Jamais un chokepoint.**
+Le portail est une **lentille remplaçable** au-dessus de Nostr. Il agrège les lives publiés par les nodes sous le tag `pumpstr` (`kind:30311`, tag `t=pumpstr`) sans jamais devenir un chokepoint.
 
-> ✅ **Implémenté** : [`index.html`](./index.html) — client Nostr (browser) qui s'abonne à `kind:30311 #t=pumpstr`
-> et rend la grille des lives (titre, hôte résolu kind-0, statut, viewers). Servi par le node à **`/portal`**.
-> Démo : `cd node && npm start` puis ouvre http://localhost:4242/portal (le live du node y apparaît).
+## Architecture
 
-## Principe (ADR-003)
+- **`portal/index.html`** — client Nostr pur. Se connecte aux relais publics, récupère les événements NIP-53 et affiche la grille des lives. Aucun backend requis.
+- **`portal/indexer.ts`** — backend optionnel. Souscrit aux mêmes événements, les met en cache et expose une API REST légère (`/api/lives`, `/api/live`, `/health`).
+- **Tag `r`** — chaque événement NIP-53 publie l'URL du node (`nodeUrl`) dans un tag `r`. Le lien « Regarder & tipper » redirige le viewer vers le bon node, pas vers une page locale.
 
-Le portail **ne tient pas de registre des nodes**. Il s'abonne aux events NIP-53 `kind:30311`
-sur les relays et rend la vue : grille des lives, trending, leaderboard (le pump-feel).
-N'importe qui peut lancer un autre portail sur les mêmes events → le portail est une **lentille
-remplaçable**.
+## Lancer le client seul
 
-## Responsabilités
+Le fichier `index.html` est servi par le node à la route `/portal` :
 
-1. **Indexer** : cache + classe les `kind:30311` (trending, anti-spam, ranking). Confort UX, pas
-   contrôle — events ré-indexables par tous.
-2. **Player** : au clic, joue le stream depuis l'URL publiée par le node.
-3. **Tip** : route le tip **viewer → wallet du node en P2P** (in-app VTXO ou LN address). Le portail
-   ne touche **jamais** l'argent. Applique le zap-split optionnel (ADR-006).
-4. **Curation / modération** (ADR-007 légal) : choisit ce qu'**il** affiche (allowlist/réputation).
-   Son exposition = ce qu'il surface, comme un moteur de recherche.
+```bash
+npm run start:node
+# puis ouvrir http://localhost:4242/portal
+```
 
-## À ne PAS faire
+## Lancer l'indexer backend (optionnel)
 
-- ❌ Crawler les nodes dans une base centrale (= recentralisation).
-- ❌ Custodier ou router les fonds.
-- ❌ Prétendre être la seule porte d'entrée.
+```bash
+npm run start:portal
+# écoute sur http://localhost:4243 par défaut
+```
 
-## Prior art
+Variables d'environnement :
 
-S'inspirer de **zap.stream** (v0l) — même socle Nostr/NIP-53/zaps. L'edge de Pumpstr est ailleurs
-(node souverain, Arkade, pump-mechanics, export). Cf. `../ARCHITECTURE.md` §8.
+| Variable | Défaut | Description |
+|----------|--------|-------------|
+| `PORT` | `4243` | Port HTTP de l'indexer |
+| `RELAYS` | `wss://relay.damus.io,wss://relay.nostr.band` | Relais Nostr séparés par des virgules |
+
+Endpoints :
+
+- `GET /health` — état du service et nombre d'événements en cache.
+- `GET /api/lives?status=live` — liste des lives (optionnellement filtrés par statut).
+- `GET /api/live?id=<event-id>` — détail d'un live.
+
+## Tests
+
+```bash
+npm run test:portal
+```
+
+## Fédération
+
+N'importe qui peut héberger son propre portail en pointant sur les mêmes relais. L'indexer officiel n'est qu'une commodité ; le client Nostr reste la source de vérité.

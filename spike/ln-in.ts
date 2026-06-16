@@ -15,7 +15,7 @@ import { SingleKey, Wallet } from "@arkade-os/sdk";
 import { ArkadeSwaps, BoltzSwapProvider } from "@arkade-os/boltz-swap";
 
 const ARK_SERVER_URL =
-  process.env.ARK_SERVER_URL ?? "https://master.mutinynet.arklabs.to";
+  process.env.ARK_SERVER_URL ?? "https://mutinynet.arkade.sh";
 const NETWORK = process.env.BOLTZ_NETWORK ?? "mutinynet";
 const AMOUNT = Number(process.env.AMOUNT ?? 50000);
 

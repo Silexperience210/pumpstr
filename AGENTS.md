@@ -9,17 +9,24 @@ Pumpstr = streaming vidéo « façon pump.fun » mais **sur Bitcoin uniquement, 
 self-custodial et fédéré**. Le pump-feel vient de la **vélocité des sats en direct**
 (tips, goals, leaderboards), pas d'un token. Conçu le 2026-06-15.
 
-## Statut (2026-06-15)
+## Statut (2026-06-16)
 - ✅ Architecture **verrouillée** (`ARCHITECTURE.md`, `DECISIONS.md`).
 - ✅ **Spike A — rail Arkade (React Native + LN-in) = VERT**, validé avec du code qui tourne
   contre l'opérateur live. Détails + preuves : `spike/SPIKE-RESULT.md`.
-- ✅ **Node** construit et runnable : `node/` — vrai wallet créateur Arkade +
-  overlay de tips sats temps réel (WebSocket).
-- 🟢 **Spike #2 — PROUVÉ BOUT-EN-BOUT (vrais sats)** : `escrowClaimable→claim` = VTXO réclamable scripté
+- ✅ **Spike #2 — PROUVÉ BOUT-EN-BOUT (vrais sats)** : `escrowClaimable→claim` = VTXO réclamable scripté
   (VtxoScript 3 feuilles claim/refund/exit) validé **E2E live mutinynet** (bénéficiaire +15 000 sats, `arkTxid`
   settled). arkd co-signe le bespoke. Preuves : `spike/SPIKE-2-RESULT.md` + `packages/payment-rail/escrow-e2e.ts`.
+- ✅ **`PaymentRail` complet** : `send`, `createLnInvoice`, `escrowClaimable`, `claim`, `refund`, `exit` implémentés
+  dans `packages/payment-rail/` (`arkade.ts` + `escrow-spend.ts`). `refund` récupère les rewards non réclamés
+  après expiry ; `exit` sort unilatéralement vers L1 via `VtxoManager.recoverVtxos()`.
+- ✅ **Node** construit et runnable : `node/` — vrai wallet créateur Arkade +
+  overlay de tips sats temps réel (WebSocket), API durcie (validation, rate-limiting, admin token).
+- ✅ **Persistance SQLite** : tips et rewards persistés via `better-sqlite3` (`node/db.ts`), plus de `.rewards.json`
+  ni de `recentTips` en mémoire.
 - ✅ **MVP fédéré complet** dans `node/` : identité Nostr (tippeur + créateur), NIP-53 publisher + zap
-  receipts (9735), portail fédéré, page watch (vidéo HLS), node **dockerisé** (Node 22, clé sur volume).
+  receipts (9735), portail fédéré (`portal/index.html` + `portal/indexer.ts`), page watch (vidéo HLS), node
+  **dockerisé** (Node 22, clé sur volume).
+- ✅ **Tests** : 60/60 passent — 12 rail + 40 node + 8 portal (`npm run test`).
 
 ## Principes non négociables
 1. Bitcoin uniquement, **sats only** — pas de token, pas d'AMM, pas de stablecoin.
@@ -46,7 +53,7 @@ Pumpstr/
 ├── README.md            ← pitch + quickstart
 ├── packages/payment-rail/  ← interface PaymentRail VERROUILLÉE (défaut : Arkade)
 ├── node/                ← LE NODE runnable (Docker/Umbrel) : server.ts + public/{overlay,tip,watch}.html (sert /portal)
-├── portal/              ← portail fédéré : index.html = client Nostr (kind:30311 #t=pumpstr), servi à /portal
+├── portal/              ← portail fédéré : index.html (client Nostr), indexer.ts (backend optionnel)
 └── spike/               ← Spike A : Arkade RN + LN-in (smoke.ts, ln-in.ts, SPIKE-RESULT.md)
                             Spike #2 : VTXO réclamable (escrow.ts, SPIKE-2-RESULT.md)
 ```
@@ -80,16 +87,31 @@ Pumpstr/
 
 ## Comment lancer
 ```bash
+# Installer tous les workspaces une seule fois (racine)
+npm install
+
 # Le node (lancer le backend)
-cd node && npm install && npm start
+npm run start:node
 #   overlay (source OBS) : http://localhost:4242/overlay.html
 #   page tip (viewer)    : http://localhost:4242/tip.html
 #   démo instantanée     : bouton "▶ Simuler" sur la page tip
 
+# Tests & typecheck globaux
+npm run typecheck
+npm run test
+npm run test:rail
+npm run test:node
+npm run test:portal
+
+# Lancer l'indexer backend du portail (optionnel)
+npm run start:portal
+
 # Re-valider le rail (spike A)
-cd spike && npm install
-ARK_SERVER_URL=https://mutinynet.arkade.sh npm run smoke   # wallet + adresse + solde
-ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin  # facture LN-in
+ARK_SERVER_URL=https://mutinynet.arkade.sh npm run smoke:spike   # wallet + adresse + solde
+ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin:spike  # facture LN-in
+
+# Test live exit / refund (⚠️ vrais sats de test sur mutinynet)
+ARK_SERVER_URL=https://mutinynet.arkade.sh npm run live:exit-refund
 ```
 > Node 22 LTS. Réseau réel requis (opérateur Arkade). Secrets jamais commités (`.creator-key`, `.env` gitignorés).
 
@@ -108,7 +130,11 @@ ARK_SERVER_URL=https://mutinynet.arkade.sh BOLTZ_NETWORK=mutinynet npm run lnin 
    ✅ **Flux reward produit câblé (node)** : `POST /api/reward {to:npub, amount, reason}` → `rail.escrowClaimable`
    → persiste `.rewards.json` + **note Nostr** (kind:1 taguant le bénéficiaire) + renvoie ref+claimUrl ;
    `GET /api/rewards?to=npub` liste les refs ; `/claim.html` les affiche (claim = côté wallet bénéficiaire). Gate
-   `ADMIN_TOKEN`, split `PLATFORM_SPLIT_BPS`. Reste : **(c)** `exit()` via Unroll (stub) ; claim in-browser dans `claim.html`.
+   `ADMIN_TOKEN`, split `PLATFORM_SPLIT_BPS`. ✅ **(c) `refund()` + `exit()` implémentés** dans `packages/payment-rail/`
+   (`ArkadeRail.refund` sur la feuille refund après expiry ; `ArkadeRail.exit` via `VtxoManager.recoverVtxos`).
+   Reste : route admin `POST /api/reward/refund` côté node + validation live avec vrais sats.
+6. 🟢 **Prochaine étape — durcissement + tests API** : tests automatisés du node, validation stricte des entrées,
+   rate-limiting sur les endpoints publics, persistance robuste des tips/rewards.
 2. ✅ **Fait** — détection des tips **temps réel** (`wallet.notifyIncomingFunds`, filtre net) **+ identité Nostr
    du tippeur** : il signe une **zap request NIP-57 (kind 9734)**, le backend la **vérifie** (`verifyEvent`) et
    résout son profil (kind 0 : nom + avatar). Corrélation identité↔paiement LN via `waitAndClaim` (dédup par txid).

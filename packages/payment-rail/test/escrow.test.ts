@@ -20,7 +20,7 @@ import {
   encodeRef,
   decodeRef,
   type EscrowRef,
-} from "../src/arkade.js";
+} from "../src/escrow-spend.js";
 
 const hex = (u: Uint8Array) => Buffer.from(u).toString("hex");
 const xonly = (h: string) => SingleKey.fromHex(h).xOnlyPublicKey();
@@ -36,6 +36,7 @@ const sampleRef: EscrowRef = {
   net: "mutinynet",
   tapTree: "01c04420deadbeef",
   claimLeaf: "20" + "ab".repeat(32) + "ac",
+  refundLeaf: "20" + "cd".repeat(32) + "ac",
   beneficiary: BENEF,
   expiry: EXPIRY.toString(),
   amount: "15000",

@@ -3,3 +3,8 @@ node_modules/
 .rewards.json
 .env
 *.log
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+data/

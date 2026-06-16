@@ -13,7 +13,7 @@ import "fake-indexeddb/auto"; // Node n'a pas IndexedDB. En RN : ./adapters/asyn
 import { SingleKey, Wallet } from "@arkade-os/sdk";
 
 const ARK_SERVER_URL =
-  process.env.ARK_SERVER_URL ?? "https://master.mutinynet.arklabs.to";
+  process.env.ARK_SERVER_URL ?? "https://mutinynet.arkade.sh";
 
 function randomPrivateKeyHex(): string {
   const bytes = new Uint8Array(32);

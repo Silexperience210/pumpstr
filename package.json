@@ -1,0 +1,39 @@
+{
+  "name": "pumpstr",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pumpstr — streaming façon pump.fun, mais sur Bitcoin, sats-only, self-custodial et fédéré.",
+  "license": "AGPL-3.0-only",
+  "workspaces": [
+    "node",
+    "packages/*",
+    "spike"
+  ],
+  "scripts": {
+    "start:node": "npm run start --workspace=node",
+    "dev:node": "npm run dev --workspace=node",
+    "start:portal": "tsx portal/indexer.ts",
+    "typecheck:node": "npm run typecheck --workspace=node",
+    "typecheck:rail": "npm run typecheck --workspace=@pumpstr/payment-rail",
+    "typecheck:portal": "tsc --project portal/tsconfig.json --noEmit",
+    "typecheck:spike": "tsc --project spike/tsconfig.json --noEmit",
+    "typecheck": "npm run typecheck:rail && npm run typecheck:node && npm run typecheck:portal && npm run typecheck:spike",
+    "test:rail": "npm run test --workspace=@pumpstr/payment-rail",
+    "test:node": "npm run test --workspace=node",
+    "test:portal": "tsx --test portal/test/*.test.ts",
+    "test": "npm run test:rail && npm run test:node && npm run test:portal",
+    "verify:rail": "npm run verify --workspace=@pumpstr/payment-rail",
+    "smoke:spike": "npm run smoke --workspace=pumpstr-spike-arkade",
+    "lnin:spike": "npm run lnin --workspace=pumpstr-spike-arkade",
+    "live:exit-refund": "npm run live:exit-refund --workspace=pumpstr-spike-arkade"
+  },
+  "engines": {
+    "node": ">=22.12.0 <25.0.0",
+    "npm": ">=10.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -67,6 +67,12 @@ export interface PaymentRail {
   claim(ref: ClaimableRef): Promise<PaymentResult>;
 
   /**
+   * Reprend une récompense non réclamée par le bénéficiaire après expiration.
+   * Seule la clé qui a créé l'escrow (plateforme) peut déclencher ce refund.
+   */
+  refund(ref: ClaimableRef): Promise<PaymentResult>;
+
+  /**
    * Sortie unilatérale vers Bitcoin L1 — la garantie self-custody.
    * Toujours disponible, sans coopération de l'opérateur.
    */

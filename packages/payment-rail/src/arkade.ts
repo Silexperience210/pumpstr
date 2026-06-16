@@ -31,9 +31,6 @@ import {
   RestIndexerProvider,
   VtxoScript,
   ArkAddress,
-  MultisigTapscript,
-  CSVMultisigTapscript,
-  CLTVMultisigTapscript,
   toXOnlySignerHex,
   contractHandlers,
 } from "@arkade-os/sdk";
@@ -43,7 +40,6 @@ import type {
   TapLeafScript,
   Identity,
   IncomingFunds,
-  RelativeTimelock,
 } from "@arkade-os/sdk";
 import { ArkadeSwaps, BoltzSwapProvider } from "@arkade-os/boltz-swap";
 import type {
@@ -54,9 +50,17 @@ import type {
   ClaimableRef,
   Sats,
 } from "./index.js";
-
-const toHex = (u: Uint8Array) => Buffer.from(u).toString("hex");
-const fromHex = (h: string) => Uint8Array.from(Buffer.from(h, "hex"));
+import {
+  buildEscrowInputs,
+  buildEscrowVtxoScript,
+  decodeRef,
+  encodeRef,
+  filterSpendableVtxos,
+  fromHex,
+  parseBeneficiary,
+  toHex,
+  type EscrowRef,
+} from "./escrow-spend.js";
 
 // Types dérivés de la signature SDK — évite d'importer @scure/btc-signer ici.
 type OffchainOutput = Parameters<Wallet["buildAndSubmitOffchainTx"]>[1][number];
@@ -110,62 +114,7 @@ function ensureEscrowHandler(): void {
   } as any);
 }
 
-/**
- * Construit le VtxoScript d'escrow réclamable à 3 feuilles (pur, sans réseau — testable).
- *   claim  = multisig(bénéficiaire, serveur)              → payout collaboratif
- *   refund = CLTV(expiry) + multisig(plateforme, serveur) → reprise si non réclamé
- *   exit   = CSV(exitDelay) + (bénéficiaire)              → sortie unilatérale (self-custody)
- * Déterministe : mêmes entrées → même script/adresse. Renvoie aussi le hex de la feuille claim.
- */
-export function buildEscrowVtxoScript(
-  beneficiaryX: Uint8Array,
-  platformX: Uint8Array,
-  serverX: Uint8Array,
-  expiry: bigint,
-  exitDelay: RelativeTimelock,
-): { script: VtxoScript; claim: Uint8Array } {
-  const claim = MultisigTapscript.encode({ pubkeys: [beneficiaryX, serverX] }).script;
-  const refund = CLTVMultisigTapscript.encode({ absoluteTimelock: expiry, pubkeys: [platformX, serverX] }).script;
-  const exit = CSVMultisigTapscript.encode({ timelock: exitDelay, pubkeys: [beneficiaryX] }).script;
-  return { script: new VtxoScript([claim, refund, exit]), claim };
-}
 
-/** Bénéficiaire attendu en **pubkey x-only hex (32 o)** — c'est aussi le pubkey Nostr (ADR-004). */
-export function parseBeneficiary(b: string): Uint8Array {
-  const t = b.trim();
-  if (/^[0-9a-fA-F]{64}$/.test(t)) return fromHex(t);
-  throw new Error(
-    "escrowClaimable: 'beneficiary' attendu en pubkey x-only hex 32o " +
-      "(un npub se décode en hex côté appelant — p.ex. nostr-tools nip19.decode).",
-  );
-}
-
-// --- Sérialisation du ClaimableRef.id (portable, sans base64 : RN-safe) ---
-export interface EscrowRef {
-  net: string;
-  tapTree: string; // hex de VtxoScript.encode()
-  claimLeaf: string; // hex du script de la feuille claim (pour findLeaf)
-  beneficiary: string; // x-only hex
-  expiry: string; // bigint -> string
-  amount: string; // sats escrow -> string
-  tx: string; // txid de funding (informatif)
-}
-const REF_TAG = "pumpstr-claim&";
-export function encodeRef(r: EscrowRef): string {
-  return REF_TAG + Object.entries(r).map(([k, v]) => `${k}=${v}`).join("&");
-}
-export function decodeRef(id: string): EscrowRef {
-  if (!id.startsWith(REF_TAG)) throw new Error("claim(): ClaimableRef invalide");
-  const out: Record<string, string> = {};
-  for (const part of id.slice(REF_TAG.length).split("&")) {
-    const i = part.indexOf("=");
-    if (i > 0) out[part.slice(0, i)] = part.slice(i + 1);
-  }
-  for (const k of ["net", "tapTree", "claimLeaf", "beneficiary", "expiry", "amount", "tx"]) {
-    if (!(k in out)) throw new Error(`claim(): ClaimableRef — champ manquant '${k}'`);
-  }
-  return out as unknown as EscrowRef;
-}
 
 export class ArkadeRail implements PaymentRail {
   private info?: ArkInfo;
@@ -299,7 +248,7 @@ export class ArkadeRail implements PaymentRail {
     }
 
     const expiry = BigInt(opts?.expiresAt ?? Math.floor(Date.now() / 1000) + this.cfg.defaultEscrowTtlSec);
-    const { script, claim } = await this.buildEscrowScript(beneficiaryX, expiry);
+    const { script, claim, refund } = await this.buildEscrowScript(beneficiaryX, expiry);
     const address = script.address(await this.addressPrefix(), await this.serverXOnly()).encode();
 
     const tx = await this.wallet.send({ address, amount: Number(escrowAmount) });
@@ -309,6 +258,7 @@ export class ArkadeRail implements PaymentRail {
         net: info.network,
         tapTree: toHex(script.encode()),
         claimLeaf: toHex(claim),
+        refundLeaf: toHex(refund),
         beneficiary: toHex(beneficiaryX),
         expiry: expiry.toString(),
         amount: escrowAmount.toString(),
@@ -361,18 +311,12 @@ export class ArkadeRail implements PaymentRail {
 
     // localise le(s) VTXO(s) parqué(s) à l'adresse d'escrow
     const { vtxos } = await this.indexer.getVtxos({ scripts: [pkScript] });
-    const spendable = vtxos.filter((v) => !v.isSpent && !v.spentBy && !v.isUnrolled && v.value > 0);
+    const spendable = filterSpendableVtxos(vtxos as ExtendedVirtualCoin[]);
     if (spendable.length === 0) {
       throw new Error("claim(): aucun VTXO réclamable (déjà réclamé, ou funding pas encore confirmé)");
     }
 
-    const tapTree = script.encode();
-    const inputs: ExtendedVirtualCoin[] = spendable.map((v) => ({
-      ...(v as ExtendedVirtualCoin),
-      tapTree,
-      forfeitTapLeafScript: claimLeaf, // chemin co-signé serveur
-      intentTapLeafScript: claimLeaf,
-    }));
+    const inputs = buildEscrowInputs(script, claimLeaf, spendable);
 
     const total = spendable.reduce((s, v) => s + v.value, 0);
     const myPkScript = ArkAddress.decode(await this.wallet.getAddress()).pkScript;
@@ -384,11 +328,72 @@ export class ArkadeRail implements PaymentRail {
   }
 
   /**
-   * Sortie unilatérale L1 (self-custody). Hors scope du spike #2 : à câbler via le flow
-   * `Unroll` du SDK (broadcast du checkpoint + exit CSV). Volontairement non simulé.
+   * Reprend un escrow non réclamé par le bénéficiaire après expiration.
+   * Seule l'identité qui a créé l'escrow (la plateforme) peut l'utiliser.
+   */
+  async refund(ref: ClaimableRef): Promise<PaymentResult> {
+    const r = decodeRef(ref.id);
+
+    const meX = toHex(await this.wallet.identity.xOnlyPublicKey());
+    // La plateforme est l'identité courante ; le refund exige la clé plateforme.
+    // On ne peut pas reconstruire la clé plateforme depuis le ref, donc on fait
+    // confiance au caller pour utiliser le bon wallet (même comportement que claim).
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (nowSec < Number(r.expiry)) {
+      throw new Error(`refund(): l'escrow n'est pas encore expiré (expire dans ${Number(r.expiry) - nowSec}s)`);
+    }
+
+    const script = VtxoScript.decode(fromHex(r.tapTree));
+    const refundLeaf: TapLeafScript = script.findLeaf(r.refundLeaf);
+    const pkScript = toHex(script.pkScript);
+
+    // Même mécanisme que claim : enregistrer le contrat pour que le signer le reconnaisse.
+    ensureEscrowHandler();
+    await this.wallet.contractRepository.saveContract({
+      type: ESCROW_CONTRACT_TYPE,
+      params: { pubKey: meX, tapTree: r.tapTree, claimLeaf: r.refundLeaf },
+      script: pkScript,
+      address: script.address(await this.addressPrefix(), await this.serverXOnly()).encode(),
+      state: "active",
+      createdAt: Date.now(),
+    });
+
+    const { vtxos } = await this.indexer.getVtxos({ scripts: [pkScript] });
+    const spendable = filterSpendableVtxos(vtxos as ExtendedVirtualCoin[]);
+    if (spendable.length === 0) {
+      throw new Error("refund(): aucun VTXO remboursable (déjà réclamé/refundé, ou funding pas confirmé)");
+    }
+
+    const inputs = buildEscrowInputs(script, refundLeaf, spendable);
+
+    const total = spendable.reduce((s, v) => s + v.value, 0);
+    const myPkScript = ArkAddress.decode(await this.wallet.getAddress()).pkScript;
+    const outputs: OffchainOutput[] = [{ script: myPkScript, amount: BigInt(total) } as OffchainOutput];
+
+    const { arkTxid } = await this.wallet.buildAndSubmitOffchainTx(inputs, outputs);
+    return { id: arkTxid, status: "settled" };
+  }
+
+  /**
+   * Sortie unilatérale L1 (self-custody) de tous les VTXO recoverables du wallet.
+   * Utilise le mécanisme `recoverVtxos` du SDK Arkade (settlement on-chain).
+   *
+   * ⚠️ Cette opération broadcast une transaction on-chain ; elle doit être testée
+   * avec de vrais sats de test avant prod. Le retour du SDK peut varier selon
+   * l'état des VTXO (expirés / en cours de renouvellement).
    */
   async exit(): Promise<{ txid: string }> {
-    throw new Error("exit(): non implémenté ici — câbler via le flow Unroll du SDK (hors scope spike #2)");
+    const vm = await this.wallet.getVtxoManager();
+    const { recoverable } = await vm.getRecoverableBalance();
+    if (recoverable <= 0n) {
+      throw new Error("exit(): aucun VTXO recoverable à sortir");
+    }
+    const txid = await vm.recoverVtxos();
+    if (typeof txid !== "string" || !txid) {
+      throw new Error("exit(): le SDK n'a pas retourné de txid de recovery");
+    }
+    return { txid };
   }
 }
 

@@ -9,7 +9,9 @@ name: pumpstr-node
 
 services:
   node:
-    build: .
+    build:
+      context: ..
+      dockerfile: node/Dockerfile
     restart: unless-stopped
     ports:
       - "${PORT:-4242}:4242"

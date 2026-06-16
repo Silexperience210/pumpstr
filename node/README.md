@@ -35,10 +35,11 @@ exactement pareil.
 
 | Réel | Stub / à venir |
 |---|---|
-| Identité Nostr tippeur (zap NIP-57) + live NIP-53 + zap receipts 9735 + npub créateur + portail fédéré + **page watch (vidéo HLS + tips superposés)** + provision Cloudflare (creds-gated) | **Packaging node Docker/Umbrel** (1-clic) ; vidéo réelle = brancher tes creds CF (sinon flux démo Mux) |
-| Facture LN-in via Boltz (`createLightningInvoice`) | Pas encore de Lightning Address `user@host` (LUD-16) — facture à la demande |
-| Overlay + page tip temps réel (WebSocket) | Identité Nostr / NIP-53 live (couche suivante) |
-| `simulate` pour démo instantanée | Vidéo (Cloudflare Stream / origine) — l'overlay se pose dessus dans OBS |
+| Wallet Arkade créateur, tips temps réel (WebSocket), overlay + page tip + simulate | **Exit/reward refund** (`PaymentRail.exit()`) ; review avant payout |
+| Lightning Address `user@host` (LUD-16) + zaps NIP-57 + zap receipts 9735 | Auto-sweep vers LN address externe |
+| Identité Nostr tippeur + live NIP-53 + npub créateur + portail fédéré | Indexer backend du portail (trending/leaderboard) |
+| Page watch (vidéo HLS + tips superposés) + provision Cloudflare Stream (creds-gated) | Vidéo souveraine (Umbrel-origine + CDN) |
+| Facture LN-in via Boltz (`createLightningInvoice`) + rewards claimables (escrow VTXO) | Packaging Umbrel 1-clic (Docker présent, `umbrel-app.yml` à finaliser) |
 
 ## Déployer le node (Docker / Umbrel)
 

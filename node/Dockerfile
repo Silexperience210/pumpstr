@@ -5,12 +5,16 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Deps d'abord (cache de couche). On utilise `npm install` (PAS `npm ci`) : le lock est
-# généré sous Windows/npm 11 et les binaires esbuild/tsx sont platform-specific -> install
-# re-résout pour linux (le `npm ci` casserait sur le lock cross-plateforme).
+# Contexte de build = racine du repo (workspace npm). On copie d'abord les manifests
+# pour bénéficier du cache de couche, puis on installe l'ensemble du workspace.
 COPY package.json package-lock.json* ./
-RUN npm install --no-audit --no-fund
+COPY node/package.json ./node/
+COPY packages/payment-rail/package.json ./packages/payment-rail/
+COPY spike/package.json ./spike/
 
+RUN npm ci --no-audit --no-fund
+
+# Puis on copie le code source de tous les workspaces.
 COPY . .
 
 ENV PORT=4242
@@ -18,5 +22,5 @@ ENV KEY_FILE=/data/.creator-key
 EXPOSE 4242
 VOLUME ["/data"]
 
-# tsx exécute le TypeScript directement (pas d'étape de build).
-CMD ["npx", "tsx", "server.ts"]
+# Le point d'entrée du node reste son propre serveur.
+CMD ["npm", "run", "start", "--workspace=node"]

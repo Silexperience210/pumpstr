@@ -19,11 +19,13 @@ import { EventSource } from "eventsource"; // SSE du watcher SDK ; absent en Nod
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join, extname } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 import { ArkadeRail } from "@pumpstr/payment-rail/arkade"; // ADR-007 : tout le money passe par le rail
 import { SimplePool, getPublicKey, verifyEvent, finalizeEvent, nip19 } from "nostr-tools";
+import { createHandler } from "./server-core.js";
+import { PumpstrDb, defaultDbPath } from "./db.js";
 
 // notifyIncomingFunds démarre aussi un watcher ON-CHAIN (Electrum WS) qui boucle en
 // reconnexion sur mutinynet (pas d'endpoint Electrum). Off-chain (VTXO via SSE) non affecté
@@ -82,7 +84,6 @@ const lnMetadata = JSON.stringify([["text/plain", `Tip ⚡ ${lnAddress} (Pumpstr
 
 // --- Rewards : escrow réclamable (ADR-004/006). Le créateur récompense un bénéficiaire (npub),
 // potentiellement offline ; les sats sont parqués dans un VTXO que LUI SEUL réclame (sa clé). ---
-const REWARDS_FILE = process.env.REWARDS_FILE ?? join(HERE, ".rewards.json"); // état runtime (volume)
 const PLATFORM_SPLIT_BPS = Number(process.env.PLATFORM_SPLIT_BPS ?? 0);        // part plateforme (ADR-006)
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";                            // si défini : requis pour créer
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL || LN_ADDRESS_BASE).replace(/\/$/, "");
@@ -99,24 +100,10 @@ function loadOrCreateKeyHex(): string {
 // ---------- identités ----------
 type Tipper = { name: string; pubkey?: string; picture?: string; comment?: string; via: string };
 let creatorAddress = "";
-const recentTips: { amount: number; name: string; picture?: string; at: number }[] = [];
 
-// ---------- Rewards (escrow réclamable) ----------
-type Reward = { id: string; to: string; npub: string; amount: number; reason: string; ref: string; createdAt: number; claimed: boolean };
-function loadRewards(): Reward[] {
-  try { return existsSync(REWARDS_FILE) ? JSON.parse(readFileSync(REWARDS_FILE, "utf8")) : []; } catch { return []; }
-}
-const rewards: Reward[] = loadRewards();
-function saveRewards() {
-  try { writeFileSync(REWARDS_FILE, JSON.stringify(rewards)); } catch (e: any) { console.error("[reward] save:", e?.message ?? e); }
-}
-/** npub OU pubkey x-only hex -> pubkey hex (la clé Nostr = clé de claim Arkade, ADR-004). */
-function pubkeyHexFrom(s: string): string | null {
-  const t = (s || "").trim();
-  if (/^[0-9a-fA-F]{64}$/.test(t)) return t.toLowerCase();
-  try { const d = nip19.decode(t); if (d.type === "npub") return d.data as string; } catch { /* pas un npub */ }
-  return null;
-}
+// ---------- Persistance SQLite ----------
+const db = new PumpstrDb(defaultDbPath(HERE));
+console.log(`[db] persistance SQLite : ${defaultDbPath(HERE)}`);
 
 // ---------- Nostr (résolution de profil + vérif des zap requests) ----------
 const pool = new SimplePool();
@@ -184,8 +171,7 @@ function broadcast(msg: object) {
 function registerTip(amount: number, t: Tipper) {
   if (!Number.isFinite(amount) || amount <= 0) return;
   const at = Date.now();
-  recentTips.unshift({ amount, name: t.name, picture: t.picture, at });
-  if (recentTips.length > 20) recentTips.length = 20;
+  db.addTip({ amount, name: t.name, picture: t.picture, pubkey: t.pubkey, comment: t.comment, via: t.via, createdAt: at });
   broadcast({ type: "tip", amount, at, name: t.name, pubkey: t.pubkey, picture: t.picture, comment: t.comment, via: t.via });
   console.log(`[tip] +${amount} sats — ${t.name} (${t.via})${t.comment ? ` : "${t.comment}"` : ""}`);
 }
@@ -207,6 +193,7 @@ function buildLiveEvent(status: "live" | "ended", participants: number) {
   ];
   if (STREAM.url) tags.push(["streaming", STREAM.url]);
   if (STREAM.image) tags.push(["image", STREAM.image]);
+  tags.push(["r", PUBLIC_BASE]); // URL du node pour que le portail redirige le viewer
   if (status === "ended") tags.push(["ends", String(now)]);
   return finalizeEvent({ kind: 30311, created_at: now, content: "", tags }, creatorSk);
 }
@@ -324,180 +311,39 @@ process.on("SIGINT", async () => {
 await provisionCloudflareLive(); // creds CF -> live input + URL HLS ; sinon /watch utilise un flux démo
 
 // ---------- HTTP ----------
-const MIME: Record<string, string> = {
-  ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml",
-};
-function sendJson(res: any, code: number, body: object) {
-  res.statusCode = code;
-  res.setHeader("content-type", "application/json");
-  res.end(JSON.stringify(body));
-}
-function readBody(req: any): Promise<string> {
-  return new Promise((resolve) => {
-    let d = ""; req.on("data", (c: any) => (d += c)); req.on("end", () => resolve(d)); req.on("error", () => resolve(""));
-  });
-}
-const parseJson = (s: string): any => { try { return JSON.parse(s || "{}"); } catch { return {}; } };
-
-// Règle un swap LN-in : à la confirmation (settle du rail), fire le tip identifié + zap receipt 9735.
-function settleAndZap(settle: (() => Promise<{ txid: string }>) | null, bolt11: string | null, amount: number, tipper: Tipper, zapRequest?: any) {
-  if (!settle) return;
-  settle()
-    .then((cl) => {
-      if (cl?.txid) claimedTxids.add(cl.txid);
-      registerTip(amount, tipper);
-      if (zapRequest && bolt11) publishZapReceipt(zapRequest, bolt11, amount);
-    })
-    .catch((e: any) => console.error("[ln] settle:", e?.message ?? e));
-}
-
-const server = createServer(async (req, res) => {
-  const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
-
-  if (url.pathname === "/api/creator") {
-    return sendJson(res, 200, { address: creatorAddress, npub: creatorNpub, lnAddress, recentTips });
-  }
-
-  // LUD-16 Lightning Address : <user>@host -> .well-known/lnurlp/<user> (LUD-06 payRequest + LUD-21/NIP-57)
-  if (url.pathname.startsWith("/.well-known/lnurlp/")) {
-    const user = decodeURIComponent(url.pathname.split("/").pop() || "");
-    if (user !== LN_ADDRESS_USER) return sendJson(res, 404, { status: "ERROR", reason: "unknown user" });
-    return sendJson(res, 200, {
-      tag: "payRequest",
-      callback: `${LN_ADDRESS_BASE}/api/lnurlp/callback`,
-      minSendable: 1000,             // 1 sat (msats)
-      maxSendable: 100_000_000_000,  // 100M sats
-      metadata: lnMetadata,
-      commentAllowed: 140,
-      allowsNostr: true,             // LUD-21 / NIP-57
-      nostrPubkey: creatorPubkey,    // les zaps sont signés par cette clé (= clé wallet, ADR-004)
-    });
-  }
-
-  // Callback LNURL-pay : rend une facture (via Boltz LN-in) ; gère les zaps NIP-57.
-  if (url.pathname === "/api/lnurlp/callback") {
-    const sats = Math.floor(Number(url.searchParams.get("amount") || 0) / 1000);
-    if (!sats || sats < 1) return sendJson(res, 200, { status: "ERROR", reason: "montant invalide" });
-    let zapRequest: any = null;
-    const nostrParam = url.searchParams.get("nostr");
-    if (nostrParam) { try { zapRequest = JSON.parse(nostrParam); } catch {} }
-    const comment = url.searchParams.get("comment") || "";
-    try {
-      // NIP-57 : description = la zap request (sinon les métadonnées LUD-06). NB : Boltz ne pose pas
-      // de description_hash strict -> vérif NIP-57 stricte best-effort ; le reçu 9735 reste signé+publié.
-      const description = zapRequest ? JSON.stringify(zapRequest) : lnMetadata;
-      const { bolt11, settle } = await rail.createLnInvoiceWithSettle(BigInt(sats), description);
-      const tipper = await tipperFromBody({ zapRequest, comment }, "lnaddr");
-      settleAndZap(settle, bolt11, sats, tipper, zapRequest);
-      return sendJson(res, 200, { pr: bolt11, routes: [] });
-    } catch (e: any) {
-      return sendJson(res, 200, { status: "ERROR", reason: e?.message ?? String(e) });
-    }
-  }
-
-  if (url.pathname === "/api/stream") {
-    return sendJson(res, 200, { url: STREAM.url, demo: !STREAM.url, title: STREAM.title });
-  }
-
-  if (url.pathname === "/api/invoice" && req.method === "POST") {
-    const body = parseJson(await readBody(req));
-    const amount = Number(body.amount) || 1000;
-    const zapRequest = body?.zapRequest;
-    const tipper = await tipperFromBody(body, "ln");
-    try {
-      const { bolt11, settle } = await rail.createLnInvoiceWithSettle(BigInt(amount), zapRequest ? JSON.stringify(zapRequest) : "Tip Pumpstr");
-      settleAndZap(settle, bolt11, amount, tipper, zapRequest);
-      return sendJson(res, 200, { bolt11, amount });
-    } catch (e: any) {
-      return sendJson(res, 502, { error: e?.message ?? String(e) });
-    }
-  }
-
-  // ----- Rewards : le créateur parque des sats pour un bénéficiaire (escrow réclamable) -----
-  if (url.pathname === "/api/reward" && req.method === "POST") {
-    if (ADMIN_TOKEN && req.headers["x-admin-token"] !== ADMIN_TOKEN) {
-      return sendJson(res, 401, { error: "x-admin-token requis" });
-    }
-    const body = parseJson(await readBody(req));
-    const pubkey = pubkeyHexFrom(body.to);
-    const amount = Math.floor(Number(body.amount) || 0);
-    if (!pubkey) return sendJson(res, 400, { error: "'to' invalide (npub ou pubkey x-only hex)" });
-    if (amount < 330) return sendJson(res, 400, { error: "montant < dust (330 sats)" });
-    try {
-      // escrow via le rail (fonds du créateur) ; le bénéficiaire claim plus tard avec SA clé
-      const ref = await rail.escrowClaimable(pubkey, BigInt(amount), { splitToPlatformBps: PLATFORM_SPLIT_BPS });
-      const npub = nip19.npubEncode(pubkey);
-      const reward: Reward = {
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-        to: pubkey, npub, amount, reason: (body.reason ?? "").toString().slice(0, 140),
-        ref: ref.id, createdAt: Date.now(), claimed: false,
-      };
-      rewards.unshift(reward);
-      if (rewards.length > 500) rewards.length = 500;
-      saveRewards();
-      const claimUrl = `${PUBLIC_BASE}/claim.html?to=${npub}`;
-      publishRewardNote(pubkey, amount, claimUrl, reward.reason);
-      console.log(`[reward] +${amount} sats -> ${shortNpub(pubkey)} (escrow créé, id ${reward.id})`);
-      return sendJson(res, 200, { id: reward.id, to: npub, amount, ref: ref.id, claimUrl });
-    } catch (e: any) {
-      const msg = String(e?.message ?? e);
-      const code = /insufficient|fund|solde|dust/i.test(msg) ? 400 : 502;
-      return sendJson(res, code, { error: msg });
-    }
-  }
-
-  // Rewards réclamables d'un bénéficiaire : son client récupère le `ref` puis claim côté wallet.
-  if (url.pathname === "/api/rewards") {
-    const pk = pubkeyHexFrom(url.searchParams.get("pubkey") || url.searchParams.get("to") || "");
-    if (!pk) return sendJson(res, 400, { error: "pubkey/npub requis" });
-    const mine = rewards
-      .filter((r) => r.to === pk && !r.claimed)
-      .map((r) => ({ id: r.id, amount: r.amount, reason: r.reason, ref: r.ref, createdAt: r.createdAt }));
-    return sendJson(res, 200, { pubkey: pk, count: mine.length, rewards: mine });
-  }
-
-  // Bookkeeping best-effort : le client signale qu'un reward a été réclamé.
-  if (url.pathname === "/api/reward/claimed" && req.method === "POST") {
-    const body = parseJson(await readBody(req));
-    const r = rewards.find((x) => x.id === body.id);
-    if (r && !r.claimed) { r.claimed = true; saveRewards(); console.log(`[reward] ${r.id} marqué réclamé`); }
-    return sendJson(res, 200, { ok: !!r });
-  }
-
-  if (url.pathname === "/api/simulate" && req.method === "POST") {
-    const body = parseJson(await readBody(req));
-    const amount = Number(body.amount) || Math.floor(Math.random() * 4900) + 100;
-    const tipper = await tipperFromBody(body, "demo");
-    registerTip(amount, tipper);
-    return sendJson(res, 200, { ok: true, amount, name: tipper.name });
-  }
-
-  // le portail fédéré (client Nostr) — servi depuis ../portal pour le confort de démo
-  if (url.pathname === "/portal" || url.pathname === "/portal/") {
-    try {
-      const data = await readFile(join(HERE, "..", "portal", "index.html"));
-      res.setHeader("content-type", "text/html; charset=utf-8");
-      return res.end(data);
-    } catch { res.statusCode = 404; return res.end("portal not built"); }
-  }
-
-  // statique
-  const p = url.pathname === "/" ? "/overlay.html" : url.pathname;
-  try {
-    const data = await readFile(join(PUBLIC, p));
-    res.setHeader("content-type", MIME[extname(p)] ?? "application/octet-stream");
-    res.end(data);
-  } catch {
-    res.statusCode = 404;
-    res.end("not found");
-  }
+const handler = createHandler({
+  rail,
+  config: {
+    port: PORT,
+    lnAddressUser: LN_ADDRESS_USER,
+    lnAddressBase: LN_ADDRESS_BASE,
+    lnMetadata,
+    creatorAddress,
+    creatorPubkey,
+    creatorNpub,
+    stream: STREAM,
+    publicBase: PUBLIC_BASE,
+    adminToken: ADMIN_TOKEN,
+    platformSplitBps: PLATFORM_SPLIT_BPS,
+  },
+  db,
+  state: { claimedTxids },
+  helpers: {
+    registerTip,
+    publishZapReceipt,
+    publishRewardNote,
+    tipperFromBody,
+  },
+  fs: { publicDir: PUBLIC, portalDir: join(HERE, "..", "portal") },
 });
+
+const server = createServer(handler);
 
 // ---------- WS attaché ----------
 const wss = new WebSocketServer({ server, path: "/ws" });
 wss.on("connection", (ws) => {
   clients.add(ws);
-  ws.send(JSON.stringify({ type: "hello", address: creatorAddress, npub: creatorNpub, recentTips }));
+  ws.send(JSON.stringify({ type: "hello", address: creatorAddress, npub: creatorNpub, recentTips: db.recentTips() }));
   ws.on("close", () => clients.delete(ws));
 });
 

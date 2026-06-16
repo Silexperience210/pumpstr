@@ -1,0 +1,14 @@
+node_modules
+.git
+.env
+.env.example
+*.log
+.creator-key
+.rewards.json
+.e2e-keys.json
+.e2e-ref.json
+Dockerfile
+docker-compose.yml
+.dockerignore
+.github
+*.md
