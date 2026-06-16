@@ -2,92 +2,431 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Pumpstr — Réclamer un reward</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Pumpstr — Bearer Claims</title>
+  <meta name="description" content="Des sats parqués pour toi. Redeemable uniquement par ta clé." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,400..900&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <style>
-    :root { --bg:#0a0a0f; --card:#14141c; --neon:#7df9ff; --gold:#ffd23f; --txt:#e8e8f0; --dim:#8a8aa0; }
-    * { box-sizing:border-box; }
-    body { margin:0; background:radial-gradient(1200px 600px at 50% -10%, #1a1030, var(--bg)); color:var(--txt);
-           font:15px/1.5 ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif; min-height:100vh; }
-    .wrap { max-width:620px; margin:0 auto; padding:32px 18px 60px; }
-    h1 { font-size:26px; margin:0 0 4px; letter-spacing:.5px; }
-    h1 .z { color:var(--gold); }
-    .sub { color:var(--dim); margin:0 0 24px; }
-    .row { display:flex; gap:8px; }
-    input { flex:1; background:var(--card); border:1px solid #2a2a3a; color:var(--txt); border-radius:10px; padding:12px 14px; font-size:14px; }
-    input:focus { outline:none; border-color:var(--neon); }
-    button { background:var(--neon); color:#04141a; border:0; border-radius:10px; padding:12px 18px; font-weight:700; cursor:pointer; }
-    button:disabled { opacity:.5; cursor:default; }
-    .card { background:var(--card); border:1px solid #2a2a3a; border-radius:14px; padding:16px; margin:14px 0; }
-    .amt { font-size:22px; font-weight:800; color:var(--gold); }
-    .reason { color:var(--dim); margin:2px 0 10px; }
-    .ref { font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; word-break:break-all; background:#0d0d14;
-           border:1px dashed #2a2a3a; border-radius:8px; padding:10px; color:var(--neon); }
-    .mini { background:#23233200; border:1px solid #2a2a3a; color:var(--txt); padding:6px 10px; font-size:12px; font-weight:600; margin-top:8px; }
-    .empty, .err { color:var(--dim); text-align:center; padding:24px 0; }
-    .err { color:#ff7d7d; }
-    .how { font-size:13px; color:var(--dim); margin-top:8px; }
-    .how b { color:var(--txt); }
-    a { color:var(--neon); }
+    /* ============================================================
+       PUMPSTR — "BEARER INSTRUMENT / SOVEREIGN VAULT"
+       Chaque reward = un bon au porteur gravé. Redeemable par ta clé.
+       ============================================================ */
+    :root {
+      --vault-0:#070b09; --vault-1:#0a0f0c; --vault-2:#0e1612;
+      --bone:#d8d2bf; --bone-dim:#8d9486; --bone-faint:#5b635a;
+      --paper:#ece5d1; --paper-edge:#ddd4ba;
+      --ink-green:#143a2c; --ink-deep:#0c281e;
+      --vermilion:#bf2f2a; --vermilion-deep:#8e201d;
+      --foil:#b9954f; --foil-hi:#e8c98a;
+      --line:rgba(216,210,191,.13);
+      --ease:cubic-bezier(.2,.7,.2,1);
+    }
+    *,*::before,*::after{box-sizing:border-box}
+    html{ -webkit-text-size-adjust:100%; }
+    body{
+      margin:0; min-height:100svh; color:var(--bone);
+      background:var(--vault-0);
+      font-family:"IBM Plex Mono",ui-monospace,monospace;
+      -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+      overflow-x:hidden;
+      cursor:none;
+    }
+    /* ---- vault floor : vignette + guilloché engraving + grain ---- */
+    .floor{ position:fixed; inset:0; z-index:-3; background:
+      radial-gradient(120% 80% at 50% -10%, #11201a 0%, var(--vault-1) 42%, var(--vault-0) 100%);
+    }
+    .floor::before{ /* engraved concentric guilloché */
+      content:""; position:absolute; inset:-20%;
+      background:
+        repeating-radial-gradient(circle at 50% 32%, transparent 0 13px, rgba(120,160,140,.05) 13px 14px),
+        repeating-radial-gradient(circle at 50% 32%, transparent 0 31px, rgba(160,140,90,.035) 31px 32px);
+      mask:radial-gradient(70% 55% at 50% 30%, #000 0%, transparent 75%);
+      animation:drift 60s linear infinite; opacity:.9;
+    }
+    .grain{ position:fixed; inset:0; z-index:-2; pointer-events:none; opacity:.5;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+      mix-blend-mode:overlay;
+    }
+    @keyframes drift{ to{ transform:rotate(360deg) } }
+
+    /* ---- custom cursor : reticule de vault ---- */
+    .cursor{ position:fixed; z-index:9999; width:26px; height:26px; margin:-13px 0 0 -13px; pointer-events:none;
+      border:1px solid rgba(216,210,191,.45); border-radius:50%; transition:transform .12s var(--ease), border-color .2s, opacity .3s; mix-blend-mode:difference; }
+    .cursor::after{ content:""; position:absolute; inset:11px; background:var(--foil-hi); border-radius:50%; }
+    .cursor.hot{ transform:scale(1.7); border-color:var(--vermilion); }
+    @media (hover:none){ body{cursor:auto} .cursor{display:none} }
+
+    /* ---- layout ---- */
+    .wrap{ max-width:760px; margin:0 auto; padding:clamp(28px,6vw,72px) clamp(16px,5vw,28px) 96px; }
+
+    /* ---- masthead ---- */
+    .mast{ border-bottom:1px solid var(--line); padding-bottom:22px; margin-bottom:34px; }
+    .kicker{ display:flex; justify-content:space-between; align-items:baseline; gap:12px;
+      font-size:11px; letter-spacing:.42em; text-transform:uppercase; color:var(--bone-dim); }
+    .kicker .seal{ color:var(--foil); }
+    h1{ font-family:"Fraunces",serif; font-optical-sizing:auto; font-weight:600;
+      font-size:clamp(44px,12vw,104px); line-height:.86; letter-spacing:-.02em; margin:.18em 0 .12em;
+      color:var(--bone); font-style:italic; }
+    h1 em{ font-style:normal; color:var(--foil); position:relative; }
+    h1 .underglow{ -webkit-text-stroke:0; }
+    .lede{ max-width:46ch; color:var(--bone-dim); font-size:13.5px; line-height:1.65; }
+    .lede b{ color:var(--bone); font-weight:500; }
+
+    /* reveal */
+    .rise{ opacity:0; transform:translateY(16px); animation:rise .9s var(--ease) forwards; }
+    @keyframes rise{ to{ opacity:1; transform:none } }
+
+    /* ---- vault access (input) ---- */
+    .access{ margin:30px 0 8px; }
+    .access-lbl{ font-size:10.5px; letter-spacing:.34em; text-transform:uppercase; color:var(--bone-faint); margin-bottom:9px; }
+    .dial{ display:flex; gap:0; border:1px solid rgba(216,210,191,.22); background:rgba(10,16,13,.6);
+      border-radius:3px; overflow:hidden; box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 18px 40px -28px #000; }
+    .dial input{ flex:1; min-width:0; background:transparent; border:0; color:var(--bone);
+      font-family:"IBM Plex Mono",monospace; font-size:14px; letter-spacing:.02em; padding:16px 18px; }
+    .dial input::placeholder{ color:var(--bone-faint); }
+    .dial input:focus{ outline:none; }
+    .dial button{ flex:none; cursor:none; border:0; border-left:1px solid rgba(216,210,191,.18);
+      background:var(--bone); color:var(--vault-0); font-family:"IBM Plex Mono",monospace; font-weight:600;
+      font-size:11.5px; letter-spacing:.22em; text-transform:uppercase; padding:0 22px; transition:background .2s, color .2s; }
+    .dial button:hover{ background:var(--foil-hi); }
+    .dial:focus-within{ border-color:rgba(185,149,79,.6); box-shadow:0 0 0 1px rgba(185,149,79,.35), 0 18px 40px -28px #000; }
+    .hint{ margin-top:10px; font-size:11px; color:var(--bone-faint); }
+
+    /* ---- status states ---- */
+    .status{ margin-top:40px; text-align:center; }
+    .status .stamp-note{ display:inline-block; padding:14px 26px; border:1.5px solid var(--bone-faint);
+      color:var(--bone-dim); font-size:12px; letter-spacing:.28em; text-transform:uppercase; border-radius:3px;
+      transform:rotate(-1.4deg); }
+    .scan{ color:var(--foil); letter-spacing:.3em; font-size:12px; text-transform:uppercase; position:relative; }
+    .scan::after{ content:"▮"; animation:blink 1s steps(2) infinite; }
+    @keyframes blink{ 50%{opacity:0} }
+    .err{ color:var(--vermilion); }
+
+    /* =========================================================
+       BEARER BOND TICKET
+       ========================================================= */
+    .ledger{ display:flex; flex-direction:column; gap:30px; margin-top:36px; }
+    .bond{ position:relative; --tilt:0deg;
+      background:
+        linear-gradient(180deg, var(--paper) 0%, var(--paper-edge) 100%);
+      color:var(--ink-green); border-radius:4px;
+      padding:26px clamp(20px,4vw,34px) 24px;
+      box-shadow:0 26px 50px -30px rgba(0,0,0,.85), 0 2px 0 rgba(255,255,255,.25) inset, 0 0 0 1px rgba(20,58,44,.18);
+      transform:rotate(var(--tilt));
+      opacity:0; animation:dealin .8s var(--ease) forwards;
+      isolation:isolate; overflow:hidden;
+    }
+    @keyframes dealin{ from{ opacity:0; transform:translateY(26px) rotate(calc(var(--tilt) - 2deg)); }
+      to{ opacity:1; transform:rotate(var(--tilt)); } }
+    /* paper grain + guilloché engraving on the note */
+    .bond::before{ content:""; position:absolute; inset:0; z-index:-1; pointer-events:none; opacity:.5;
+      background:
+        repeating-linear-gradient(63deg, transparent 0 6px, rgba(20,58,44,.05) 6px 7px),
+        repeating-linear-gradient(-63deg, transparent 0 6px, rgba(20,58,44,.045) 6px 7px),
+        repeating-radial-gradient(circle at 86% 50%, transparent 0 9px, rgba(20,58,44,.06) 9px 10px);
+    }
+    /* engraved inner frame */
+    .bond::after{ content:""; position:absolute; inset:9px; border:1px solid rgba(20,58,44,.42);
+      border-radius:2px; box-shadow:inset 0 0 0 2.5px var(--paper), inset 0 0 0 3.5px rgba(20,58,44,.18);
+      pointer-events:none; }
+    .bond:hover{ box-shadow:0 34px 60px -28px rgba(0,0,0,.9), 0 0 0 1px rgba(185,149,79,.5) inset; }
+
+    .bond-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:14px;
+      border-bottom:1px solid rgba(20,58,44,.28); padding-bottom:12px; }
+    .marque{ font-family:"Fraunces",serif; font-weight:600; font-style:italic; font-size:14px; letter-spacing:.01em; color:var(--ink-deep); }
+    .marque small{ display:block; font-family:"IBM Plex Mono",monospace; font-style:normal; font-weight:500;
+      font-size:8.5px; letter-spacing:.34em; text-transform:uppercase; color:rgba(20,58,44,.62); margin-top:3px; }
+    .serial{ text-align:right; font-size:9.5px; letter-spacing:.12em; color:var(--ink-deep); }
+    .serial b{ display:block; color:var(--vermilion-deep); letter-spacing:.18em; }
+
+    .bond-body{ display:grid; grid-template-columns:1fr auto; gap:10px 18px; align-items:center; padding:20px 2px 8px; }
+    .denom-lbl{ grid-column:1/-1; font-size:9px; letter-spacing:.36em; text-transform:uppercase; color:rgba(20,58,44,.6); }
+    .denom{ font-family:"Fraunces",serif; font-optical-sizing:auto; font-weight:600; line-height:.82;
+      font-size:clamp(46px,13vw,82px); letter-spacing:-.025em; color:var(--ink-deep);
+      display:flex; align-items:baseline; gap:.14em; }
+    .denom .glyph{ font-style:italic; color:var(--vermilion); font-size:.62em; }
+    .denom .unit{ font-family:"IBM Plex Mono",monospace; font-weight:500; font-size:.18em; letter-spacing:.32em;
+      align-self:flex-end; padding-bottom:1.1em; color:rgba(20,58,44,.7); }
+    /* foil shimmer over the denomination on hover */
+    .denom .shine{ position:relative; }
+    .denom .shine::after{ content:""; position:absolute; inset:0;
+      background:linear-gradient(105deg, transparent 38%, rgba(232,201,138,.85) 50%, transparent 62%);
+      background-size:280% 100%; background-position:140% 0; mix-blend-mode:overlay; pointer-events:none; }
+    .bond:hover .denom .shine::after{ animation:foil 1.1s var(--ease); }
+    @keyframes foil{ from{background-position:140% 0} to{background-position:-60% 0} }
+
+    .rosette{ width:74px; height:74px; opacity:.85; }
+
+    .bearer{ margin-top:6px; padding-top:14px; border-top:1px dashed rgba(20,58,44,.34); }
+    .bearer .ln{ font-size:9px; letter-spacing:.3em; text-transform:uppercase; color:rgba(20,58,44,.62); margin-bottom:5px; }
+    .bearer .key{ font-size:11.5px; letter-spacing:.02em; color:var(--ink-deep); word-break:break-all; }
+    .memo{ margin-top:12px; font-family:"Fraunces",serif; font-style:italic; font-size:14px; color:var(--ink-green); }
+    .memo::before{ content:"“"; color:var(--vermilion); } .memo::after{ content:"”"; color:var(--vermilion); }
+    .issued{ margin-top:10px; font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:rgba(20,58,44,.55); }
+
+    /* wax stamp */
+    .wax{ position:absolute; top:18px; right:clamp(18px,4vw,30px); width:78px; height:78px; pointer-events:none;
+      display:grid; place-items:center; transform:rotate(-13deg); opacity:.92; }
+    .wax svg{ position:absolute; inset:0; }
+    .wax span{ font-size:7.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--vermilion);
+      text-align:center; line-height:1.25; font-weight:600; }
+
+    /* redeem action */
+    .bond-foot{ margin-top:18px; display:flex; align-items:center; justify-content:space-between; gap:14px;
+      border-top:1px solid rgba(20,58,44,.28); padding-top:16px; }
+    .micro{ font-size:7.5px; letter-spacing:.12em; color:rgba(20,58,44,.5); text-transform:uppercase;
+      white-space:nowrap; overflow:hidden; max-width:60%; }
+    .redeem{ cursor:none; border:1.5px solid var(--ink-deep); background:var(--ink-deep); color:var(--paper);
+      font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:11px; letter-spacing:.26em; text-transform:uppercase;
+      padding:12px 20px; border-radius:2px; transition:transform .15s var(--ease), background .2s, letter-spacing .2s; }
+    .redeem:hover{ background:var(--vermilion); border-color:var(--vermilion); letter-spacing:.34em; }
+    .redeem:active{ transform:scale(.96); }
+
+    /* redeemed overlay stamp (slam-in) */
+    .bond.redeemed{ }
+    .redeemed-stamp{ position:absolute; inset:0; z-index:3; display:grid; place-items:center; pointer-events:none; }
+    .redeemed-stamp span{ font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:clamp(26px,7vw,44px);
+      letter-spacing:.14em; color:var(--vermilion); border:3px solid var(--vermilion); padding:10px 22px; border-radius:4px;
+      transform:rotate(-9deg) scale(2.4); opacity:0; text-transform:uppercase;
+      box-shadow:0 0 0 2px rgba(191,47,42,.25) inset; mix-blend-mode:multiply; }
+    .bond.redeemed .redeemed-stamp span{ animation:slam .5s var(--ease) forwards; }
+    @keyframes slam{ 0%{opacity:0; transform:rotate(-9deg) scale(2.6)} 70%{opacity:1; transform:rotate(-9deg) scale(.92)}
+      85%{transform:rotate(-9deg) scale(1.04)} 100%{opacity:1; transform:rotate(-9deg) scale(1)} }
+    @keyframes shake{ 0%,100%{transform:rotate(var(--tilt))} 20%{transform:rotate(var(--tilt)) translate(-3px,1px)}
+      40%{transform:rotate(var(--tilt)) translate(3px,-1px)} 60%{transform:rotate(var(--tilt)) translate(-2px,0)} }
+    .bond.shaking{ animation:shake .4s var(--ease); }
+
+    /* redeem drawer (the ref + how-to) */
+    .drawer{ display:grid; grid-template-rows:0fr; transition:grid-template-rows .5s var(--ease); }
+    .drawer>div{ overflow:hidden; }
+    .bond.open .drawer{ grid-template-rows:1fr; }
+    .drawer-in{ margin-top:16px; padding-top:16px; border-top:1px dashed rgba(20,58,44,.34); }
+    .ref-lbl{ font-size:8.5px; letter-spacing:.3em; text-transform:uppercase; color:rgba(20,58,44,.6); margin-bottom:7px; }
+    .ref{ font-size:10.5px; line-height:1.5; word-break:break-all; color:var(--ink-green);
+      background:rgba(20,58,44,.06); border:1px dashed rgba(20,58,44,.3); border-radius:3px; padding:11px 12px; }
+    .drawer-actions{ display:flex; flex-wrap:wrap; gap:9px; margin-top:11px; }
+    .mini{ cursor:none; font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+      padding:8px 13px; border-radius:2px; border:1px solid rgba(20,58,44,.4); background:transparent; color:var(--ink-deep);
+      transition:background .18s, color .18s; }
+    .mini:hover{ background:var(--ink-deep); color:var(--paper); }
+    .mini.done{ background:var(--ink-green); color:var(--paper); border-color:var(--ink-green); }
+    .howto{ margin-top:12px; font-size:10.5px; line-height:1.6; color:rgba(20,58,44,.78); }
+    .howto b{ color:var(--ink-deep); }
+
+    /* footer microprint */
+    .colophon{ margin-top:64px; padding-top:18px; border-top:1px solid var(--line);
+      display:flex; flex-wrap:wrap; justify-content:space-between; gap:12px;
+      font-size:9.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--bone-faint); }
+    .colophon .creed{ color:var(--bone-dim); }
+    a{ color:var(--foil); text-decoration:none; } a:hover{ color:var(--foil-hi); }
+
+    @media (max-width:520px){
+      .bond-body{ grid-template-columns:1fr; } .rosette{ display:none; }
+      .wax{ width:64px; height:64px; } .micro{ display:none; }
+      .bond-foot{ justify-content:flex-end; }
+    }
+    @media (prefers-reduced-motion:reduce){ *{ animation-duration:.001ms !important; } .floor::before{animation:none} }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>🎁 Tes <span class="z">rewards</span> Pumpstr</h1>
-    <p class="sub">Des sats parqués pour toi en escrow. Réclamables avec <b>ta</b> clé — self-custody, personne ne les tient.</p>
+  <div class="floor"></div>
+  <div class="grain"></div>
+  <div class="cursor" id="cur"></div>
 
-    <div class="row">
-      <input id="npub" placeholder="ton npub… (npub1…)" autocomplete="off" spellcheck="false" />
-      <button id="go">Voir</button>
-    </div>
+  <main class="wrap">
+    <header class="mast">
+      <div class="kicker rise">
+        <span>Pumpstr · Trésorerie souveraine</span>
+        <span class="seal">✦ AU PORTEUR ✦</span>
+      </div>
+      <h1 class="rise" style="animation-delay:.06s">Bons <em>au porteur</em>.</h1>
+      <p class="lede rise" style="animation-delay:.12s">
+        Des sats <b>parqués pour toi</b> en escrow Arkade. Chaque bon n'est encaissable
+        que par <b>ta clé</b> — pas de garde, pas d'intermédiaire. Présente ton npub, ouvre le coffre.
+      </p>
 
-    <div id="out"></div>
-  </div>
+      <div class="access rise" style="animation-delay:.18s">
+        <div class="access-lbl">— Accès au coffre —</div>
+        <div class="dial">
+          <input id="npub" placeholder="npub1…  (ta clé publique Nostr)" autocomplete="off" spellcheck="false" inputmode="text" />
+          <button id="go" data-hot>Ouvrir</button>
+        </div>
+        <div class="hint">Lecture seule. Ta clé privée ne quitte jamais ton wallet — l'encaissement se signe chez toi.</div>
+      </div>
+    </header>
+
+    <section id="out" class="status" aria-live="polite"></section>
+
+    <footer class="colophon">
+      <span class="creed">Not your keys · not your sats.</span>
+      <span>Pumpstr · Bitcoin only · self-custody · ⚡ Arkade</span>
+    </footer>
+  </main>
+
+  <!-- gabarit SVG : rosette guilloché + sceau de cire -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <g id="rosette-src">
+        <g fill="none" stroke="#143a2c" stroke-width="0.8" opacity="0.85">
+          <circle cx="37" cy="37" r="34"/><circle cx="37" cy="37" r="27"/>
+          <g id="petals"></g>
+        </g>
+      </g>
+    </defs>
+  </svg>
 
   <script type="module">
     import { nip19 } from "https://esm.sh/nostr-tools@2.7.2";
-    const $ = (s) => document.querySelector(s);
-    const out = $("#out"), input = $("#npub");
-    const params = new URLSearchParams(location.search);
-    const pre = params.get("to") || params.get("npub");
-    if (pre) input.value = pre;
 
-    function fmtAmt(n) { return new Intl.NumberFormat("fr-FR").format(n); }
+    /* ---------- custom cursor ---------- */
+    const cur = document.getElementById("cur");
+    addEventListener("pointermove", (e) => { cur.style.left = e.clientX + "px"; cur.style.top = e.clientY + "px"; }, { passive:true });
+    addEventListener("pointerdown", () => cur.classList.add("hot"));
+    addEventListener("pointerup", () => cur.classList.remove("hot"));
+    document.addEventListener("pointerover", (e) => {
+      const hot = e.target.closest("button,a,input,.redeem,.mini");
+      cur.classList.toggle("hot", !!hot);
+    });
+
+    const $ = (s, r=document) => r.querySelector(s);
+    const out = $("#out"), input = $("#npub");
+    const fmt = (n) => new Intl.NumberFormat("fr-FR").format(n);
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+    const shortKey = (npub) => npub.length > 24 ? npub.slice(0, 14) + "…" + npub.slice(-8) : npub;
+
+    /* a small banknote rosette as inline svg */
+    function rosette() {
+      const pet = Array.from({ length: 24 }, (_, i) => {
+        const a = (i / 24) * Math.PI * 2;
+        const x1 = 37 + Math.cos(a) * 9, y1 = 37 + Math.sin(a) * 9;
+        const x2 = 37 + Math.cos(a) * 33, y2 = 37 + Math.sin(a) * 33;
+        const cx = 37 + Math.cos(a + .13) * 24, cy = 37 + Math.sin(a + .13) * 24;
+        return `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} Q${cx.toFixed(1)} ${cy.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}"/>`;
+      }).join("");
+      return `<svg class="rosette" viewBox="0 0 74 74"><g fill="none" stroke="#143a2c" stroke-width="0.7" opacity=".8">
+        <circle cx="37" cy="37" r="34"/><circle cx="37" cy="37" r="22"/><circle cx="37" cy="37" r="6" stroke="#bf2f2a"/>${pet}</g>
+        <text x="37" y="39.5" text-anchor="middle" font-family="Fraunces,serif" font-style="italic" font-size="9" fill="#bf2f2a">₿</text></svg>`;
+    }
+    function wax() {
+      return `<div class="wax"><svg viewBox="0 0 78 78"><g fill="none" stroke="#bf2f2a" stroke-width="1" opacity=".8">
+        <circle cx="39" cy="39" r="36" stroke-dasharray="2 3"/><circle cx="39" cy="39" r="30"/></g></svg>
+        <span>Pumpstr<br>· valid ·<br>bearer</span></div>`;
+    }
+
+    const microline = (serial) => (`PUMPSTR·BEARER·SATS·${serial}·`).repeat(8);
+
+    function ticket(rw, npub, i) {
+      const tilt = (i % 2 === 0 ? 1 : -1) * (0.5 + (i % 3) * 0.35);
+      const serial = (rw.id || rw.ref || "").toString().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(-10).padStart(10, "0");
+      const issued = rw.createdAt ? new Date(rw.createdAt).toLocaleDateString("fr-FR", { day:"2-digit", month:"short", year:"numeric" }) : "—";
+      const el = document.createElement("article");
+      el.className = "bond";
+      el.style.cssText = `--tilt:${tilt}deg; animation-delay:${0.08 * i + 0.1}s`;
+      el.innerHTML = `
+        ${wax()}
+        <div class="bond-top">
+          <div class="marque">Pumpstr<small>Bearer Instrument</small></div>
+          <div class="serial">No.<b>${serial}</b>Arkade · mutinynet</div>
+        </div>
+        <div class="bond-body">
+          <div class="denom-lbl">— Au porteur de cette note —</div>
+          <div class="denom"><span class="glyph">₿</span><span class="shine">${fmt(rw.amount)}</span><span class="unit">sats</span></div>
+          ${rosette()}
+        </div>
+        <div class="bearer">
+          <div class="ln">Payable à la clé</div>
+          <div class="key">${esc(shortKey(npub))}</div>
+          ${rw.reason ? `<div class="memo">${esc(rw.reason)}</div>` : ""}
+          <div class="issued">Émis le ${issued}</div>
+        </div>
+        <div class="bond-foot">
+          <div class="micro">${microline(serial)}</div>
+          <button class="redeem" data-hot>Encaisser</button>
+        </div>
+        <div class="drawer"><div><div class="drawer-in">
+          <div class="ref-lbl">Jeton de réclamation (claim ref)</div>
+          <div class="ref" data-ref>${esc(rw.ref)}</div>
+          <div class="drawer-actions">
+            <button class="mini" data-copy data-hot>Copier le jeton</button>
+            <button class="mini" data-claimed data-id="${esc(rw.id || "")}" data-hot>J'ai encaissé ✓</button>
+          </div>
+          <div class="howto">Ouvre ton <b>wallet / app Pumpstr</b> (ta clé Nostr) et colle ce jeton :
+            il appelle <b>claim(ref)</b>, signe avec <b>ta</b> clé, et crédite ton solde Arkade.
+            Le coffre ne voit jamais ta clé privée.</div>
+        </div></div></div>
+        <div class="redeemed-stamp"><span>Encaissé</span></div>`;
+
+      el.querySelector(".redeem").addEventListener("click", () => {
+        if (el.classList.contains("open")) { el.classList.remove("open"); return; }
+        el.classList.add("shaking");
+        setTimeout(() => el.classList.remove("shaking"), 420);
+        el.classList.add("open");
+        el.querySelector(".redeem").textContent = "Refermer";
+      });
+      el.querySelector("[data-copy]").addEventListener("click", (e) => {
+        navigator.clipboard?.writeText(rw.ref);
+        e.target.textContent = "✓ copié"; setTimeout(() => (e.target.textContent = "Copier le jeton"), 1500);
+      });
+      el.querySelector("[data-claimed]").addEventListener("click", async (e) => {
+        const btn = e.target;
+        try { await fetch("/api/reward/claimed", { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify({ id: rw.id }) }); } catch {}
+        btn.classList.add("done"); btn.textContent = "encaissé ✓";
+        el.classList.add("redeemed");
+      });
+      return el;
+    }
 
     async function load() {
       const v = input.value.trim();
-      if (!v) return;
-      out.innerHTML = `<div class="empty">chargement…</div>`;
-      let r;
-      try {
-        r = await fetch(`/api/rewards?to=${encodeURIComponent(v)}`).then((x) => x.json());
-      } catch (e) { out.innerHTML = `<div class="err">réseau indisponible</div>`; return; }
-      if (r.error) { out.innerHTML = `<div class="err">${r.error}</div>`; return; }
-      if (!r.rewards.length) { out.innerHTML = `<div class="empty">Aucun reward réclamable pour l'instant.</div>`; return; }
+      if (!v) { input.focus(); return; }
+      let npub = v;
+      try { if (/^[0-9a-f]{64}$/i.test(v)) npub = nip19.npubEncode(v.toLowerCase()); else nip19.decode(v); }
+      catch { out.innerHTML = `<div class="stamp-note err" style="border-color:var(--vermilion)">npub invalide</div>`; return; }
 
-      out.innerHTML = r.rewards.map((rw) => `
-        <div class="card">
-          <div class="amt">⚡ ${fmtAmt(rw.amount)} sats</div>
-          ${rw.reason ? `<div class="reason">${rw.reason.replace(/</g, "&lt;")}</div>` : ""}
-          <div class="ref" data-ref>${rw.ref}</div>
-          <button class="mini" data-copy>Copier le ref</button>
-          <div class="how">Pour encaisser : ouvre ton <b>wallet / app Pumpstr</b> (ta clé Nostr) et colle ce
-            ref — ton wallet appelle <b>claim(ref)</b> et crédite ton solde Arkade. Le node ne touche jamais ta clé.</div>
-        </div>`).join("");
+      out.className = "status";
+      out.innerHTML = `<div class="scan">Vérification du porteur</div>`;
+      let data;
+      try { data = await fetch(`/api/rewards?to=${encodeURIComponent(npub)}`).then((r) => r.json()); }
+      catch { out.innerHTML = `<div class="stamp-note err">coffre injoignable</div>`; return; }
+      if (data.error) { out.innerHTML = `<div class="stamp-note err">${esc(data.error)}</div>`; return; }
 
-      out.querySelectorAll("[data-copy]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const ref = btn.parentElement.querySelector("[data-ref]").textContent;
-          navigator.clipboard?.writeText(ref);
-          btn.textContent = "✓ copié";
-          setTimeout(() => (btn.textContent = "Copier le ref"), 1500);
-        });
-      });
+      if (!data.rewards || !data.rewards.length) {
+        out.innerHTML = `<div class="stamp-note">Coffre vide — aucun bon au porteur</div>`;
+        return;
+      }
+      const total = data.rewards.reduce((s, r) => s + r.amount, 0);
+      out.className = "";
+      out.innerHTML = `<div class="access-lbl" style="text-align:left;color:var(--bone-faint);margin:6px 0 0">
+        ${data.rewards.length} bon${data.rewards.length>1?"s":""} · ${fmt(total)} sats à l'ordre du porteur</div><div class="ledger"></div>`;
+      const ledger = $(".ledger", out);
+      data.rewards.forEach((rw, i) => ledger.appendChild(ticket(rw, npub, i)));
     }
 
     $("#go").addEventListener("click", load);
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") load(); });
-    if (pre) load();
+
+    /* aperçu design (sans backend) : /claim.html?demo=1 */
+    function renderDemo() {
+      const npub = "npub1xar9lt2s5xh5zs5l463cr3rv23hyfdq940wzscszlmu6qm6ndghsyq5sws";
+      const demo = [
+        { id: "a1b2c3d4", amount: 21000, reason: "Meilleur clip du live", ref: "pumpstr-claim&net=mutinynet&tapTree=01c04420…&claimLeaf=20ab…ac&beneficiary=eb72…137f&expiry=1903948800&amount=21000&tx=29e1…", createdAt: Date.now() - 36e5 },
+        { id: "9f8e7d6c", amount: 5000, reason: "Challenge relevé", ref: "pumpstr-claim&net=mutinynet&tapTree=01c04420…&claimLeaf=20cd…ac&beneficiary=eb72…137f&expiry=1903948800&amount=5000&tx=483c…", createdAt: Date.now() - 864e5 },
+        { id: "55aa00ff", amount: 333, reason: "", ref: "pumpstr-claim&net=mutinynet&tapTree=01c04420…&amount=333&tx=…", createdAt: Date.now() - 6048e5 },
+      ];
+      input.value = npub;
+      const total = demo.reduce((s, r) => s + r.amount, 0);
+      out.className = "";
+      out.innerHTML = `<div class="access-lbl" style="text-align:left;color:var(--bone-faint);margin:6px 0 0">${demo.length} bons · ${fmt(total)} sats à l'ordre du porteur <span style="color:var(--vermilion)">· aperçu</span></div><div class="ledger"></div>`;
+      const ledger = $(".ledger", out);
+      demo.forEach((rw, i) => ledger.appendChild(ticket(rw, npub, i)));
+    }
+
+    const params = new URLSearchParams(location.search);
+    const pre = params.get("to") || params.get("npub");
+    if (params.get("demo") === "1") renderDemo();
+    else if (pre) { input.value = pre; load(); }
   </script>
 </body>
 </html>
