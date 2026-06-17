@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Pumpstr · tip</title>
 <link rel="stylesheet" href="/pumpstr.css" />
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 <style>
   body{ display:flex; align-items:center; justify-content:center; padding:20px; }
   .card{ width:min(440px,94vw); padding:26px; }
@@ -137,7 +136,8 @@
       }).then(r => r.json());
       if (!r.bolt11) throw new Error(r.error || "pas de facture");
       invEl.textContent = r.bolt11;
-      QRCode.toCanvas(document.getElementById("qr"), r.bolt11.toUpperCase(), { width: 200, margin: 1 });
+      const _qr = await import("https://esm.sh/qrcode@1.5.4");
+      await (_qr.toCanvas ?? _qr.default.toCanvas)(document.getElementById("qr"), r.bolt11.toUpperCase(), { width: 200, margin: 1 });
     } catch (e) { invEl.textContent = "erreur : " + e.message; }
   };
 

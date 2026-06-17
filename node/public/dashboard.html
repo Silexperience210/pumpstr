@@ -7,7 +7,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="/pumpstr.css" />
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
   <style>
     .wrap{ max-width:1080px; margin:0 auto; padding:clamp(20px,4vw,40px) clamp(14px,4vw,26px) 100px; }
 
@@ -395,7 +394,8 @@
         const j = await r.json();
         if (!r.ok || !j.bolt11) throw new Error(j.error || "pas de facture");
         $("#fundInv").textContent = j.bolt11;
-        QRCode.toCanvas($("#fundQr"), j.bolt11.toUpperCase(), { width: 220, margin: 1 });
+        const _qr = await import("https://esm.sh/qrcode@1.5.4");
+        await (_qr.toCanvas ?? _qr.default.toCanvas)($("#fundQr"), j.bolt11.toUpperCase(), { width: 220, margin: 1 });
         $("#fundCopy").onclick = () => copy(j.bolt11, "facture copiée ✓");
       } catch (e) { if (e.message !== "admin") $("#fundInv").textContent = "erreur : " + e.message; }
     });
