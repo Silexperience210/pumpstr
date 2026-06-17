@@ -61,6 +61,14 @@ for (const ev of ["unhandledRejection", "uncaughtException"] as const) {
   });
 }
 
+// --- Config réseau persistante : charge node/.env s'il existe (Node >=20.12) ---
+// Fige mainnet/signet sans dépendre d'une variable d'env au lancement (un restart
+// ne doit jamais retomber en signet en silence quand on croit être en mainnet).
+try {
+  const envFile = fileURLToPath(new URL(".env", import.meta.url));
+  if (existsSync(envFile)) { (process as any).loadEnvFile(envFile); console.log(`[env] chargé : ${envFile}`); }
+} catch (e: any) { console.error("[env] .env non chargé:", e?.message ?? e); }
+
 const PORT = Number(process.env.PORT ?? 4242);
 const ARK_SERVER_URL = process.env.ARK_SERVER_URL ?? "https://mutinynet.arkade.sh";
 const BOLTZ_NETWORK = process.env.BOLTZ_NETWORK ?? "mutinynet";
