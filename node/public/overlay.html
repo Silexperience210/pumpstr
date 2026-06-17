@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Pumpstr · overlay</title>
 <link rel="stylesheet" href="/pumpstr.css" />
+<script src="/fx.js"></script>
 <style>
   /* OBS : source navigateur. Pour compositer sur la vidéo, coche "transparent" /
      mets ?clear=1 (fond retiré). En standalone : fond ink. */
@@ -89,6 +90,7 @@
   const fmt = (n) => n.toLocaleString("fr-FR");
   // TTS : lit le message du tip à voix haute (capté dans l'audio du stream). ?mute=1 pour couper.
   const TTS = new URLSearchParams(location.search).get("mute") !== "1";
+  if (window.PumpFX) PumpFX.setAudio(TTS); // sons des actions (klaxon…) dans l'audio du stream
   function speak(text) {
     if (!TTS || !window.speechSynthesis || !text) return;
     try { const u = new SpeechSynthesisUtterance(text); u.lang = "fr-FR"; u.rate = 1.03; speechSynthesis.speak(u); } catch {}
@@ -148,6 +150,7 @@
     flashEl.classList.remove("on"); void flashEl.offsetWidth; flashEl.classList.add("on");
     shockwave();
     floatTip(tip);
+    if (tip.action && window.PumpFX) PumpFX.fireAction(tip.action); // tip-to-trigger : klaxon, confettis…
     if (tip.comment) speak(`${tip.name || "anon"}, ${fmt(tip.amount)} sats. ${tip.comment}`); // message lu à voix haute
     tickerEl.innerHTML = `dernier tip : <b>+${fmt(tip.amount)} sats</b> par ${esc(tip.name || "anon")}`;
     combo += tip.amount;

@@ -124,6 +124,15 @@ const PLATFORM_SPLIT_BPS = Number(process.env.PLATFORM_SPLIT_BPS ?? 0);        /
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";                            // si défini : requis pour créer
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL || LN_ADDRESS_BASE).replace(/\/$/, "");
 
+// Tip-to-trigger : tiper EXACTEMENT ce prix déclenche l'effet (overlay + viewers).
+const ACTIONS = [
+  { id: "horn",     label: "Klaxon",         emoji: "📯", sats: 500,   effect: "horn" },
+  { id: "hearts",   label: "Pluie de cœurs", emoji: "💚", sats: 1000,  effect: "hearts" },
+  { id: "confetti", label: "Confettis",      emoji: "🎉", sats: 2100,  effect: "confetti" },
+  { id: "rainbow",  label: "Arc-en-ciel",    emoji: "🌈", sats: 5000,  effect: "rainbow" },
+  { id: "mega",     label: "MEGA HYPE",      emoji: "🚀", sats: 21000, effect: "mega" },
+];
+
 function loadOrCreateKeyHex(): string {
   if (existsSync(KEY_FILE)) return readFileSync(KEY_FILE, "utf8").trim();
   const b = new Uint8Array(32);
@@ -219,8 +228,10 @@ function registerTip(amount: number, t: Tipper) {
   if (!Number.isFinite(amount) || amount <= 0) return;
   const at = Date.now();
   livePot += amount;
+  const action = ACTIONS.find((a) => a.sats === amount); // prix exact -> effet déclenché
   db.addTip({ amount, name: t.name, picture: t.picture, pubkey: t.pubkey, comment: t.comment, via: t.via, createdAt: at });
-  broadcast({ type: "tip", amount, at, name: t.name, pubkey: t.pubkey, picture: t.picture, comment: t.comment, via: t.via, pot: livePot });
+  broadcast({ type: "tip", amount, at, name: t.name, pubkey: t.pubkey, picture: t.picture, comment: t.comment, via: t.via, pot: livePot,
+    action: action ? { id: action.id, label: action.label, emoji: action.emoji, effect: action.effect } : undefined });
   console.log(`[tip] +${amount} sats — ${t.name} (${t.via})${t.comment ? ` : "${t.comment}"` : ""}`);
 }
 
@@ -377,6 +388,7 @@ const handler = createHandler({
     publicBase: PUBLIC_BASE,
     adminToken: ADMIN_TOKEN,
     platformSplitBps: PLATFORM_SPLIT_BPS,
+    actions: ACTIONS,
   },
   db,
   state: { claimedTxids },

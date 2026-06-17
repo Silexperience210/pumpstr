@@ -36,6 +36,7 @@ export interface HandlerDeps {
     publicBase: string;
     adminToken: string;
     platformSplitBps: number;
+    actions?: { id: string; label: string; emoji: string; sats: number; effect: string }[];
   };
   db: PumpstrDb;
   state: {
@@ -272,6 +273,11 @@ export function createHandler(deps: HandlerDeps) {
 
     if (url.pathname === "/api/stream") {
       return sendJson(res, 200, { url: config.stream.url, demo: !config.stream.url, title: config.stream.title });
+    }
+
+    // Tip-to-trigger : le menu d'actions (prix -> effet) pour les pages de tip.
+    if (url.pathname === "/api/actions") {
+      return sendJson(res, 200, { actions: config.actions ?? [] });
     }
 
     if (url.pathname === "/api/invoice" && req.method === "POST") {

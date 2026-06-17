@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Pumpstr · watch</title>
 <link rel="stylesheet" href="/pumpstr.css" />
+<script src="/fx.js"></script>
 <style>
   html,body{ height:100%; overflow:hidden; }
   #vid{ position:fixed; inset:0; width:100%; height:100%; object-fit:cover; background:var(--ink-1); }
@@ -129,7 +130,7 @@
   }
   document.getElementById("unmute").onclick = (e) => {
     vid.muted = false; vid.play(); e.target.style.display = "none";
-    ttsOn = true;
+    ttsOn = true; if (window.PumpFX) PumpFX.setAudio(true); // débloque TTS + sons des actions
     try { speechSynthesis.getVoices(); speechSynthesis.speak(new SpeechSynthesisUtterance(" ")); } catch {} // débloque l'audio TTS dans ce geste
   };
 
@@ -203,6 +204,7 @@
   function floatTip(t) {
     total = (typeof t.pot === "number") ? t.pot : total + t.amount; // cagnotte serveur = tous les viewers synchro
     animate(); pulseCount(); coinBurst(t.amount);
+    if (t.action && window.PumpFX) PumpFX.fireAction(t.action); // tip-to-trigger : klaxon, confettis…
     if (t.comment) speak(`${t.name || "anon"}, ${fmt(t.amount)} sats. ${t.comment}`); // message lu à voix haute
     if (t.amount >= 2000) screenFlash();                            // gros tip = flash plein écran
     const big = Math.min(1.9, 1 + t.amount / 6000);                 // gros tip = gros plan

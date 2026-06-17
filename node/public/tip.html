@@ -59,7 +59,7 @@
       <div class="amt" data-v="2100">2 100<small>sats</small></div>
       <div class="amt" data-v="21000">21 000<small>sats</small></div>
     </div>
-    <input id="comment" class="ps-input" placeholder="un mot ? (commentaire du zap)" maxlength="140" />
+    <input id="comment" class="ps-input" placeholder="un mot ? (lu à voix haute en direct 🔊)" maxlength="140" />
 
     <div class="btns">
       <button class="act ps-btn ps-btn--pump" id="pay">⚡ Payer en Lightning</button>
@@ -114,6 +114,15 @@
     [...amts.children].forEach(c => c.classList.remove("sel"));
     el.classList.add("sel"); amount = Number(el.dataset.v);
   });
+  // tip-to-trigger : chaque montant = un effet déclenché en direct
+  fetch("/api/actions").then(r => r.json()).then(({ actions }) => {
+    if (!actions?.length) return;
+    amts.style.flexWrap = "wrap";
+    amts.innerHTML = actions.map((a, i) =>
+      `<div class="amt${i === 0 ? " sel" : ""}" data-v="${a.sats}" style="flex:1 1 28%;min-width:84px" title="${a.label}">
+        <span style="font-size:22px">${a.emoji}</span><small>${a.label}<br>${a.sats.toLocaleString("fr-FR")} sats</small></div>`).join("");
+    amount = Number(actions[0].sats);
+  }).catch(() => {});
 
   async function signZap() {
     const comment = document.getElementById("comment").value.trim();
