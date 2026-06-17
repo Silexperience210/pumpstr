@@ -92,12 +92,18 @@
   const fmt = (n) => n.toLocaleString("fr-FR");
 
   const vid = document.getElementById("vid");
-  const { url, demo } = await fetch("/api/stream").then((r) => r.json()).catch(() => ({}));
-  const src = url || DEMO_HLS;
-  if (!url) document.getElementById("demo").style.display = "";
-  if (vid.canPlayType("application/vnd.apple.mpegurl")) vid.src = src;
-  else if (Hls.isSupported()) { const h = new Hls(); h.loadSource(src); h.attachMedia(vid); }
-  else vid.src = src;
+  const { url } = await fetch("/api/stream").then((r) => r.json()).catch(() => ({}));
+  let hls = null;
+  function playHls() {
+    vid.srcObject = null;
+    const src = url || DEMO_HLS;
+    if (!url) document.getElementById("demo").style.display = "";
+    if (vid.canPlayType("application/vnd.apple.mpegurl")) vid.src = src;
+    else if (Hls.isSupported()) { hls = new Hls(); hls.loadSource(src); hls.attachMedia(vid); }
+    else vid.src = src;
+  }
+  function stopHls() { if (hls) { try { hls.destroy(); } catch {} hls = null; } vid.removeAttribute("src"); try { vid.load(); } catch {} }
+  playHls();
   document.getElementById("unmute").onclick = (e) => { vid.muted = false; vid.play(); e.target.style.display = "none"; };
 
   let creatorPk = null;
@@ -157,8 +163,38 @@
     f.innerHTML = `<img src="${esc(ava)}" onerror="this.src='${dicebear(t.name)}'" /><div class="amt">+${fmt(t.amount)} <span class="s">⚡</span></div><div class="who">${esc(t.name || "anon")}</div>${t.comment ? `<div class="cmt">“${esc(t.comment)}”</div>` : ""}`;
     document.body.appendChild(f); setTimeout(() => f.remove(), 2400);
   }
+  /* ---- viewer WebRTC : reçoit le flux P2P du créateur en direct ; sinon HLS/démo ---- */
+  const VICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun.cloudflare.com:3478" }] };
+  const livePill = document.querySelector(".ps-pill--live");
+  let vpc = null;
+  const joinLive = () => { try { ws.send(JSON.stringify({ type: "join" })); } catch {} };
+  async function onSignal(m) {
+    if (m.type === "live-started") joinLive();
+    else if (m.type === "offer") {
+      if (vpc) { try { vpc.close(); } catch {} }
+      vpc = new RTCPeerConnection(VICE);
+      vpc.ontrack = (e) => { stopHls(); vid.srcObject = e.streams[0]; document.getElementById("demo").style.display = "none";
+        vid.muted = true; vid.play?.().catch(() => {}); if (livePill) livePill.textContent = "● EN DIRECT"; };
+      vpc.onicecandidate = (e) => { if (e.candidate) ws.send(JSON.stringify({ type: "ice", candidate: e.candidate })); };
+      try {
+        await vpc.setRemoteDescription({ type: "offer", sdp: m.sdp });
+        const ans = await vpc.createAnswer(); await vpc.setLocalDescription(ans);
+        ws.send(JSON.stringify({ type: "answer", sdp: ans.sdp }));
+      } catch {}
+    }
+    else if (m.type === "ice" && m.candidate) { try { await vpc?.addIceCandidate(m.candidate); } catch {} }
+    else if (m.type === "live-ended" || m.type === "no-live") {
+      if (vpc) { try { vpc.close(); } catch {} vpc = null; }
+      if (livePill) livePill.textContent = "Live"; playHls();
+    }
+  }
   const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-  ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === "tip") floatTip({ amount: Number(m.amount), name: m.name, picture: m.picture, comment: m.comment, pubkey: m.pubkey }); };
+  ws.onopen = () => joinLive();
+  ws.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.type === "tip") floatTip({ amount: Number(m.amount), name: m.name, picture: m.picture, comment: m.comment, pubkey: m.pubkey });
+    else if (m.type === "offer" || m.type === "ice" || m.type === "live-started" || m.type === "live-ended" || m.type === "no-live") onSignal(m);
+  };
 </script>
 </body>
 </html>

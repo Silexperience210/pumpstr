@@ -34,6 +34,12 @@
     .recdot i{ width:9px; height:9px; border-radius:50%; background:var(--magenta); box-shadow:0 0 12px var(--magenta); animation:psBlink 1s infinite; }
     .lvl{ position:absolute; left:14px; right:14px; bottom:14px; height:7px; border-radius:99px; background:rgba(255,255,255,.1); overflow:hidden; box-shadow:inset 0 0 0 1px var(--line-2); }
     .lvl>i{ display:block; height:100%; width:0%; border-radius:99px; background:linear-gradient(90deg,var(--lime-deep),var(--lime),var(--amber)); transition:width .08s linear; }
+    .livebadge{ position:absolute; top:14px; right:14px; display:none; align-items:center; gap:7px; font-family:var(--mono); font-weight:800; font-size:12px;
+      background:rgba(255,46,147,.2); border:1px solid rgba(255,46,147,.55); color:#fff; padding:6px 12px; border-radius:99px; }
+    .livebadge.on{ display:flex; }
+    .livebadge i{ width:9px; height:9px; border-radius:50%; background:var(--magenta); box-shadow:0 0 12px var(--magenta); animation:psBlink 1s infinite; }
+    .ps-btn.golive{ background:var(--magenta); color:#fff; } .ps-btn.golive:hover{ filter:brightness(1.08); box-shadow:0 10px 30px -10px rgba(255,46,147,.6); }
+    .ps-btn.golive.on{ background:transparent; color:var(--magenta); border:1px solid var(--magenta); }
 
     .panel{ margin-top:18px; padding:18px; }
     .row{ display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
@@ -77,6 +83,7 @@
       <video id="preview" playsinline autoplay muted></video>
       <div class="idle" id="idle"><div class="big">🎥</div><div>caméra éteinte</div></div>
       <div class="recdot" id="recdot"><i></i><span id="recLabel">REC</span></div>
+      <div class="livebadge" id="livebadge"><i></i><span>LIVE</span> · <span id="viewerN">0</span> 👁</div>
       <div class="lvl"><i id="lvlbar"></i></div>
     </div>
 
@@ -95,6 +102,7 @@
         <button class="ps-btn ps-btn--pump" id="startBtn">▶ Démarrer</button>
         <button class="ps-btn ps-btn--ghost" id="flipBtn" disabled>🔄 Miroir</button>
         <button class="ps-btn ps-btn--rec" id="recBtn" disabled>● Rec</button>
+        <button class="ps-btn golive" id="liveBtn" disabled>🔴 Go Live</button>
         <span class="timer" id="timer" style="display:none">00:00</span>
         <button class="ps-btn ps-btn--ghost" id="stopBtn" disabled style="margin-left:auto">■ Arrêter</button>
       </div>
@@ -124,6 +132,8 @@
     const startBtn = $("#startBtn"), stopBtn = $("#stopBtn"), recBtn = $("#recBtn"), flipBtn = $("#flipBtn");
     const statusEl = $("#status");
     let stream = null, audioCtx = null, meterRAF = null, recorder = null, chunks = [], recStart = 0, timerInt = null, clipUrl = null;
+    let liveWs = null, liveOn = false; const pcs = new Map(); // go-live P2P (1 broadcaster -> N viewers)
+    const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun.cloudflare.com:3478" }] };
 
     const secure = window.isSecureContext || location.hostname === "localhost" || location.hostname === "127.0.0.1";
     if (!secure) {
@@ -183,7 +193,7 @@
       await preview.play().catch(() => {});
       await listDevices();           // labels dispos seulement après permission
       startMeter(stream);
-      stopBtn.disabled = recBtn.disabled = flipBtn.disabled = false;
+      stopBtn.disabled = recBtn.disabled = flipBtn.disabled = false; $("#liveBtn").disabled = false;
       startBtn.textContent = "↻ Redémarrer";
       const cam = stream.getVideoTracks()[0]?.label || "caméra";
       const mic = stream.getAudioTracks()[0]?.label || "micro";
@@ -195,7 +205,8 @@
       stopMeter();
       if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
       preview.srcObject = null; idle.style.display = "";
-      stopBtn.disabled = recBtn.disabled = flipBtn.disabled = true;
+      if (liveOn) stopLive();
+      stopBtn.disabled = recBtn.disabled = flipBtn.disabled = true; $("#liveBtn").disabled = true;
     }
 
     function pickMime() {
@@ -236,17 +247,64 @@
       recBtn.textContent = "● Rec"; recBtn.disabled = !stream; setStatus("clip prêt ✓", "ok");
     }
 
+    /* ---- Go Live : WebRTC P2P, le node = signaling (souverain, pas de CDN) ---- */
+    const wsUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+    function setLiveUI(on) {
+      liveOn = on;
+      $("#livebadge").classList.toggle("on", on);
+      $("#liveBtn").textContent = on ? "■ Arrêter le live" : "🔴 Go Live";
+      $("#liveBtn").classList.toggle("on", on);
+    }
+    const updViewers = () => { $("#viewerN").textContent = pcs.size; };
+
+    async function addViewer(id) {
+      if (!stream || !liveWs) return;
+      const pc = new RTCPeerConnection(ICE);
+      pcs.set(id, pc); updViewers();
+      for (const t of stream.getTracks()) pc.addTrack(t, stream);
+      pc.onicecandidate = (e) => { if (e.candidate && liveWs) liveWs.send(JSON.stringify({ type: "ice", to: id, candidate: e.candidate })); };
+      pc.onconnectionstatechange = () => { if (["failed", "closed", "disconnected"].includes(pc.connectionState)) { pc.close(); pcs.delete(id); updViewers(); } };
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        liveWs.send(JSON.stringify({ type: "offer", to: id, sdp: offer.sdp }));
+      } catch { pc.close(); pcs.delete(id); updViewers(); }
+    }
+
+    function goLive() {
+      if (!stream) return setStatus("démarre d'abord la caméra.", "err");
+      if (liveOn) return stopLive();
+      liveWs = new WebSocket(wsUrl());
+      liveWs.onopen = () => { liveWs.send(JSON.stringify({ type: "golive" })); setLiveUI(true); setStatus("🔴 EN DIRECT — partage le lien « Regarder » à tes viewers", "ok"); };
+      liveWs.onmessage = async (ev) => {
+        let m; try { m = JSON.parse(ev.data); } catch { return; }
+        if (m.type === "viewer-join") addViewer(m.from);
+        else if (m.type === "answer") { const pc = pcs.get(m.from); if (pc) try { await pc.setRemoteDescription({ type: "answer", sdp: m.sdp }); } catch {} }
+        else if (m.type === "ice" && m.from) { const pc = pcs.get(m.from); if (pc && m.candidate) try { await pc.addIceCandidate(m.candidate); } catch {} }
+        else if (m.type === "viewer-leave") { const pc = pcs.get(m.from); if (pc) pc.close(); pcs.delete(m.from); updViewers(); }
+      };
+      liveWs.onclose = () => { if (liveOn) stopLive(); };
+      liveWs.onerror = () => setStatus("signaling indisponible.", "err");
+    }
+    function stopLive() {
+      const was = liveOn; liveOn = false;
+      try { liveWs?.send(JSON.stringify({ type: "endlive" })); } catch {}
+      for (const pc of pcs.values()) pc.close(); pcs.clear(); updViewers();
+      try { liveWs?.close(); } catch {} liveWs = null;
+      setLiveUI(false); if (was) setStatus("live arrêté.");
+    }
+
     startBtn.addEventListener("click", start);
     stopBtn.addEventListener("click", () => { stopStream(); setStatus("caméra arrêtée."); startBtn.textContent = "▶ Démarrer"; });
     recBtn.addEventListener("click", () => { (recorder && recorder.state === "recording") ? stopRec() : startRec(); });
+    $("#liveBtn").addEventListener("click", goLive);
     flipBtn.addEventListener("click", () => preview.classList.toggle("mirror"));
     camSel.addEventListener("change", () => { if (stream) start(); });
     micSel.addEventListener("change", () => { if (stream) start(); });
     document.querySelector(".timer")?.addEventListener("click", stopRec);
     $("#clipClose").addEventListener("click", () => $("#clipBox").classList.remove("show"));
-    // l'icône REC sert aussi de stop
-    $("#recdot").addEventListener("click", stopRec);
-    window.addEventListener("beforeunload", stopStream);
+    $("#recdot").addEventListener("click", stopRec); // l'icône REC sert aussi de stop
+    window.addEventListener("beforeunload", () => { stopLive(); stopStream(); });
   </script>
 </body>
 </html>

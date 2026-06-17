@@ -30,6 +30,7 @@ import { SimplePool, getPublicKey, verifyEvent, finalizeEvent, nip19 } from "nos
 import { createHandler } from "./server-core.js";
 import { PumpstrDb, defaultDbPath } from "./db.js";
 import { createRelay } from "./relay.js";
+import { createSignaling } from "./signaling.js";
 
 // notifyIncomingFunds démarre aussi un watcher ON-CHAIN (Electrum WS) qui boucle en
 // reconnexion sur mutinynet (pas d'endpoint Electrum). Off-chain (VTXO via SSE) non affecté
@@ -209,6 +210,9 @@ function broadcast(msg: object) {
   const s = JSON.stringify(msg);
   for (const c of clients) if (c.readyState === 1) c.send(s);
 }
+
+// Signaling WebRTC (go-live P2P) : relaie offer/answer/ICE entre le créateur et les viewers.
+const sig = createSignaling((msg) => broadcast(msg));
 function registerTip(amount: number, t: Tipper) {
   if (!Number.isFinite(amount) || amount <= 0) return;
   const at = Date.now();
@@ -392,8 +396,9 @@ const server = createServer(handler);
 const wss = new WebSocketServer({ noServer: true });
 wss.on("connection", (ws) => {
   clients.add(ws);
-  ws.send(JSON.stringify({ type: "hello", address: creatorAddress, npub: creatorNpub, recentTips: db.recentTips() }));
-  ws.on("close", () => clients.delete(ws));
+  ws.send(JSON.stringify({ type: "hello", address: creatorAddress, npub: creatorNpub, recentTips: db.recentTips(), live: sig.isLive() }));
+  ws.on("message", (data: any) => { let m: any; try { m = JSON.parse(data.toString()); } catch { return; } sig.onMessage(ws as any, m); });
+  ws.on("close", () => { clients.delete(ws); sig.detach(ws as any); });
 });
 const relayWss = new WebSocketServer({ noServer: true });
 relayWss.on("connection", (ws) => relay.onConnection(ws as any));
