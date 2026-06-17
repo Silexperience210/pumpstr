@@ -320,6 +320,20 @@ export function createHandler(deps: HandlerDeps) {
       return sendJson(res, 200, { ok: true, amount, name: tipper.name });
     }
 
+    // NIP-11 : document d'info du relay embarqué (le WS upgrade /relay est géré en amont).
+    if (url.pathname === "/relay") {
+      res.setHeader("content-type", "application/nostr+json");
+      res.setHeader("access-control-allow-origin", "*");
+      return res.end(JSON.stringify({
+        name: "pumpstr-node",
+        description: "Relay Nostr embarqué d'un node Pumpstr — lives NIP-53 (30311) + zap receipts (9735), source fédérée souveraine.",
+        pubkey: config.creatorPubkey,
+        supported_nips: [1, 11],
+        software: "https://github.com/Silexperience210/pumpstr",
+        version: "0.1",
+      }));
+    }
+
     // portail fédéré
     if (url.pathname === "/portal" || url.pathname === "/portal/") {
       try {

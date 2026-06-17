@@ -26,6 +26,7 @@ import { ArkadeRail } from "@pumpstr/payment-rail/arkade"; // ADR-007 : tout le 
 import { SimplePool, getPublicKey, verifyEvent, finalizeEvent, nip19 } from "nostr-tools";
 import { createHandler } from "./server-core.js";
 import { PumpstrDb, defaultDbPath } from "./db.js";
+import { createRelay } from "./relay.js";
 
 // notifyIncomingFunds démarre aussi un watcher ON-CHAIN (Electrum WS) qui boucle en
 // reconnexion sur mutinynet (pas d'endpoint Electrum). Off-chain (VTXO via SSE) non affecté
@@ -104,6 +105,12 @@ let creatorAddress = "";
 // ---------- Persistance SQLite ----------
 const db = new PumpstrDb(defaultDbPath(HERE));
 console.log(`[db] persistance SQLite : ${defaultDbPath(HERE)}`);
+
+// ---------- Relay Nostr embarqué (NIP-01) ----------
+// Source fédérée souveraine : le node sert ses propres events (lives 30311, zap
+// receipts 9735, notes reward) sur ws://<node>/relay, même si les relais publics
+// sont injoignables. Pas un chokepoint — juste un relais de plus, garanti par le node.
+const relay = createRelay();
 
 // ---------- Nostr (résolution de profil + vérif des zap requests) ----------
 const pool = new SimplePool();
@@ -198,8 +205,10 @@ function buildLiveEvent(status: "live" | "ended", participants: number) {
   return finalizeEvent({ kind: 30311, created_at: now, content: "", tags }, creatorSk);
 }
 async function publishLive(status: "live" | "ended") {
+  const ev = buildLiveEvent(status, clients.size);
+  relay.publishLocal(ev as any); // toujours dispo sur le relay local, même si les relais publics échouent
   try {
-    await Promise.any(pool.publish(RELAYS, buildLiveEvent(status, clients.size)));
+    await Promise.any(pool.publish(RELAYS, ev));
     console.log(`[nostr] live "${status}" publié (kind:30311 d=${STREAM.d}, ${clients.size} viewers) -> ${RELAYS.length} relais`);
   } catch (e: any) {
     console.error("[nostr] publishLive:", e?.message ?? e);
@@ -221,6 +230,7 @@ async function publishZapReceipt(zapRequest: any, bolt11: string, amountSats: nu
         ["amount", String(amountSats * 1000)],
       ],
     }, creatorSk);
+    relay.publishLocal(receipt as any); // le leaderboard/portail peut lire ce zap depuis le relay local
     await Promise.any(pool.publish(RELAYS, receipt));
     console.log(`[nostr] zap receipt 9735 publié (${amountSats} sats)`);
   } catch (e: any) {
@@ -239,6 +249,7 @@ async function publishRewardNote(pubkey: string, amount: number, claimUrl: strin
       content: `🎁 Tu as reçu un reward Pumpstr de ${amount} sats${reason ? ` — ${reason}` : ""}. Réclame-le (self-custody) : ${claimUrl}`,
       tags: [["p", pubkey], ["t", "pumpstr"], ["t", "pumpstrreward"]],
     }, creatorSk);
+    relay.publishLocal(note as any);
     await Promise.any(pool.publish(RELAYS, note));
     console.log(`[reward] note Nostr -> ${shortNpub(pubkey)} (${amount} sats)`);
   } catch (e: any) {
@@ -339,12 +350,24 @@ const handler = createHandler({
 
 const server = createServer(handler);
 
-// ---------- WS attaché ----------
-const wss = new WebSocketServer({ server, path: "/ws" });
+// ---------- WS : 2 serveurs (noServer) routés par path sur l'upgrade ----------
+// /ws    -> flux de tips temps réel (overlay/watch/tip/dashboard)
+// /relay -> relay Nostr embarqué (NIP-01)
+// (un seul routeur d'upgrade : deux WSS `{server,path}` se court-circuiteraient.)
+const wss = new WebSocketServer({ noServer: true });
 wss.on("connection", (ws) => {
   clients.add(ws);
   ws.send(JSON.stringify({ type: "hello", address: creatorAddress, npub: creatorNpub, recentTips: db.recentTips() }));
   ws.on("close", () => clients.delete(ws));
+});
+const relayWss = new WebSocketServer({ noServer: true });
+relayWss.on("connection", (ws) => relay.onConnection(ws as any));
+server.on("upgrade", (req, socket, head) => {
+  let pathname = "/";
+  try { pathname = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`).pathname; } catch { /* */ }
+  if (pathname === "/ws") wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+  else if (pathname === "/relay") relayWss.handleUpgrade(req, socket, head, (ws) => relayWss.emit("connection", ws, req));
+  else socket.destroy();
 });
 
 server.listen(PORT, () => {
@@ -353,6 +376,7 @@ server.listen(PORT, () => {
   console.log(`     overlay (source OBS) : http://localhost:${PORT}/overlay.html`);
   console.log(`     page tip (viewer)    : http://localhost:${PORT}/tip.html`);
   console.log(`     portail fédéré       : http://localhost:${PORT}/portal`);
+  console.log(`     relay Nostr embarqué : ws://localhost:${PORT}/relay  (NIP-01)`);
   console.log(`     lightning address    : ${lnAddress}\n`);
   publishLive("live");                            // annonce le live sur Nostr (NIP-53)
   setInterval(() => publishLive("live"), 45_000); // rafraîchit statut + nb de viewers
