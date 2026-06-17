@@ -17,8 +17,11 @@ import "fake-indexeddb/auto"; // Node n'a pas IndexedDB ; en RN -> ./adapters/as
 import { EventSource } from "eventsource"; // SSE du watcher SDK ; absent en Node, react-native-sse en RN
 (globalThis as any).EventSource ??= EventSource;
 import { createServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
+import { execFileSync } from "node:child_process";
+import { networkInterfaces } from "node:os";
 import { readFile } from "node:fs/promises";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -84,6 +87,29 @@ const STREAM = {
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC = join(HERE, "public");
 const KEY_FILE = process.env.KEY_FILE ?? join(HERE, ".creator-key"); // en conteneur : monté sur un volume
+
+// HTTPS local (cert auto-signé) : getUserMedia (caméra/micro du Studio, scan QR) exige un
+// contexte sécurisé -> bloqué sur http://<IP-LAN>. On sert AUSSI en https (port HTTPS_PORT)
+// pour que ça marche sur le tel (accepter l'alerte de cert auto-signé). http reste intact.
+const TLS_DIR = join(HERE, ".tls");
+const TLS_KEY = join(TLS_DIR, "key.pem");
+const TLS_CERT = join(TLS_DIR, "cert.pem");
+function localIps(): string[] {
+  const ips = new Set<string>(["127.0.0.1"]);
+  for (const nets of Object.values(networkInterfaces())) for (const n of nets ?? []) if (n.family === "IPv4" && !n.internal) ips.add(n.address);
+  return [...ips];
+}
+function ensureTlsCert(): boolean {
+  if (existsSync(TLS_KEY) && existsSync(TLS_CERT)) return true;
+  try {
+    mkdirSync(TLS_DIR, { recursive: true });
+    const san = "subjectAltName=DNS:localhost," + localIps().map((ip) => `IP:${ip}`).join(",");
+    execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", TLS_KEY, "-out", TLS_CERT,
+      "-days", "825", "-subj", "/CN=pumpstr-local", "-addext", san], { stdio: "ignore" });
+    console.log(`[tls] certificat auto-signé généré (${san})`);
+    return true;
+  } catch (e: any) { console.error("[tls] HTTPS indispo (openssl absent ?) :", e?.message ?? e); return false; }
+}
 // Lightning Address (LUD-16) : <user>@<domaine>. En prod, mets LN_ADDRESS_BASE_URL=https://ton-domaine
 // (exposé via Cloudflare Tunnel sur Umbrel) pour que n'importe quel wallet LN puisse payer.
 const LN_ADDRESS_USER = process.env.LN_ADDRESS_USER || "pay";
@@ -371,13 +397,14 @@ wss.on("connection", (ws) => {
 });
 const relayWss = new WebSocketServer({ noServer: true });
 relayWss.on("connection", (ws) => relay.onConnection(ws as any));
-server.on("upgrade", (req, socket, head) => {
+function routeUpgrade(req: any, socket: any, head: any) {
   let pathname = "/";
   try { pathname = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`).pathname; } catch { /* */ }
   if (pathname === "/ws") wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
   else if (pathname === "/relay") relayWss.handleUpgrade(req, socket, head, (ws) => relayWss.emit("connection", ws, req));
   else socket.destroy();
-});
+}
+server.on("upgrade", routeUpgrade);
 
 server.listen(PORT, () => {
   console.log(`\n  🔥 PUMPSTR node en ligne :`);
@@ -390,3 +417,19 @@ server.listen(PORT, () => {
   publishLive("live");                            // annonce le live sur Nostr (NIP-53)
   setInterval(() => publishLive("live"), 45_000); // rafraîchit statut + nb de viewers
 });
+
+// ---------- HTTPS local (caméra/micro sur le tel via LAN) ----------
+const HTTPS_PORT = Number(process.env.HTTPS_PORT ?? PORT + 1);
+if (process.env.HTTPS !== "0" && ensureTlsCert()) {
+  try {
+    const httpsServer = createHttpsServer({ key: readFileSync(TLS_KEY), cert: readFileSync(TLS_CERT) }, handler);
+    httpsServer.on("upgrade", routeUpgrade); // mêmes WS (wss) que le http
+    httpsServer.on("error", (e: any) => console.error("[tls] serveur HTTPS:", e?.message ?? e));
+    httpsServer.listen(HTTPS_PORT, () => {
+      const ip = localIps().find((x) => x.startsWith("192.168.")) ?? localIps().find((x) => x !== "127.0.0.1") ?? "localhost";
+      console.log(`  🔒 HTTPS (cam/micro, cert auto-signé) :`);
+      console.log(`     Studio sur le tel    : https://${ip}:${HTTPS_PORT}/studio.html  (accepte l'alerte de sécurité 1×)`);
+      console.log(`     console / overlay…   : https://${ip}:${HTTPS_PORT}/dashboard.html\n`);
+    });
+  } catch (e: any) { console.error("[tls] HTTPS non démarré:", e?.message ?? e); }
+}

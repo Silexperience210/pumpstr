@@ -157,7 +157,7 @@
     f.innerHTML = `<img src="${esc(ava)}" onerror="this.src='${dicebear(t.name)}'" /><div class="amt">+${fmt(t.amount)} <span class="s">⚡</span></div><div class="who">${esc(t.name || "anon")}</div>${t.comment ? `<div class="cmt">“${esc(t.comment)}”</div>` : ""}`;
     document.body.appendChild(f); setTimeout(() => f.remove(), 2400);
   }
-  const ws = new WebSocket(`ws://${location.host}/ws`);
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
   ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === "tip") floatTip({ amount: Number(m.amount), name: m.name, picture: m.picture, comment: m.comment, pubkey: m.pubkey }); };
 </script>
 </body>

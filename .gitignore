@@ -20,6 +20,8 @@ data/
 *.db
 *.db-shm
 *.db-wal
+.tls/
+*.pem
 
 # OS / éditeurs
 .DS_Store
