@@ -94,6 +94,8 @@
     .modal canvas{ background:#fff; border-radius:12px; padding:11px; box-shadow:0 0 50px -10px rgba(188,255,46,.5); }
     .modal .inv{ font-family:var(--mono); font-size:10px; word-break:break-all; color:var(--txt-dim); background:rgba(0,0,0,.4);
       border:1px solid var(--line-2); padding:11px; border-radius:10px; max-height:84px; overflow:auto; margin-top:14px; text-align:left; }
+    .wd-or{ text-align:center; color:var(--txt-faint); font-size:11px; letter-spacing:.1em; margin:9px 0; }
+    #wdVideo{ width:100%; border-radius:12px; margin-bottom:10px; background:#000; aspect-ratio:1; object-fit:cover; }
 
     /* gate */
     .gate{ position:fixed; inset:0; background:rgba(7,10,8,.92); backdrop-filter:blur(8px); display:none; align-items:center; justify-content:center; z-index:30; padding:18px; }
@@ -204,12 +206,19 @@
   <!-- modal retrait (LN-out) -->
   <div class="modal" id="wdModal"><div class="box ps-card ps-card--glow">
     <h3>Retirer en Lightning</h3>
-    <div class="hint">Colle une <b>facture LN</b> (lnbc…) générée par ton wallet pour le montant voulu. Le coffre la paie (swap submarine) → les sats arrivent chez toi.</div>
-    <textarea id="wdInvoice" class="ps-input" rows="3" placeholder="lnbc…" style="resize:vertical;font-size:11px;text-align:left"></textarea>
+    <div class="hint">Une <b>facture</b> (lnbc…), <b>ou</b> ta <b>Lightning Address</b> + un montant. Scanne un QR avec 📷 si tu l'as sous les yeux.</div>
+    <video id="wdVideo" playsinline style="display:none"></video>
+    <textarea id="wdInvoice" class="ps-input" rows="2" placeholder="lnbc…  (facture)" style="resize:vertical;font-size:11px;text-align:left"></textarea>
+    <div class="wd-or">— ou —</div>
+    <div style="display:flex;gap:8px">
+      <input id="wdLnaddr" class="ps-input" placeholder="nom@domaine" style="flex:2;text-align:left" autocomplete="off" spellcheck="false" />
+      <input id="wdAmount" class="ps-input" type="number" min="1" placeholder="sats" style="flex:1;text-align:left" />
+    </div>
     <div class="sstatus" id="wdStatus" style="text-align:left"></div>
-    <div style="display:flex;gap:10px;margin-top:14px">
-      <button class="ps-btn ps-btn--pump" id="wdSend" style="flex:1;justify-content:center">↗ Payer la facture</button>
-      <button class="ps-btn ps-btn--ghost" id="wdClose" style="flex:1;justify-content:center">Fermer</button>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="ps-btn ps-btn--ghost" id="wdScan" title="Scanner un QR">📷</button>
+      <button class="ps-btn ps-btn--pump" id="wdSend" style="flex:1;justify-content:center">↗ Payer</button>
+      <button class="ps-btn ps-btn--ghost" id="wdClose" title="Fermer">✕</button>
     </div>
   </div></div>
 
@@ -416,24 +425,75 @@
     });
     $("#fundClose").addEventListener("click", () => fundModal.classList.remove("show"));
 
-    /* retrait (LN-out) */
+    /* retrait (LN-out) : facture OU Lightning Address + scan caméra */
     const wdModal = $("#wdModal");
-    $("#wdBtn").addEventListener("click", () => {
+    let wdStream = null, wdRAF = null;
+
+    function wdStopScan() {
+      if (wdRAF) { cancelAnimationFrame(wdRAF); wdRAF = null; }
+      if (wdStream) { wdStream.getTracks().forEach((t) => t.stop()); wdStream = null; }
+      const v = $("#wdVideo"); v.style.display = "none"; v.srcObject = null;
+    }
+    function wdReset() {
+      $("#wdInvoice").value = ""; $("#wdLnaddr").value = ""; $("#wdAmount").value = "";
       $("#wdStatus").className = "sstatus"; $("#wdStatus").textContent = "";
-      wdModal.classList.add("show"); $("#wdInvoice").focus();
-    });
-    $("#wdClose").addEventListener("click", () => wdModal.classList.remove("show"));
+    }
+    function onScanned(data) {
+      let v = String(data).trim(); if (/^lightning:/i.test(v)) v = v.slice(10);
+      const st = $("#wdStatus");
+      if (/^ln(bc|tbs|tb)[0-9]/i.test(v)) { $("#wdInvoice").value = v; st.className = "sstatus ok"; st.textContent = "facture scannée ✓"; }
+      else if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { $("#wdLnaddr").value = v; st.className = "sstatus ok"; st.textContent = "LN address scannée ✓ — saisis le montant"; }
+      else { $("#wdInvoice").value = v; st.className = "sstatus"; st.textContent = "scanné"; }
+      wdStopScan();
+    }
+    async function wdStartScan() {
+      if (wdStream) return wdStopScan(); // toggle
+      const st = $("#wdStatus"), video = $("#wdVideo");
+      if (!navigator.mediaDevices?.getUserMedia) { st.className = "sstatus err"; st.textContent = "caméra non supportée par ce navigateur"; return; }
+      try { wdStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }); }
+      catch (e) {
+        st.className = "sstatus err";
+        st.textContent = location.protocol === "https:" ? "caméra refusée." : "caméra : nécessite HTTPS (OK une fois déployé) — saisis à la main.";
+        return;
+      }
+      video.srcObject = wdStream; video.style.display = "block"; await video.play().catch(() => {});
+      st.className = "sstatus run"; st.textContent = "vise le QR…";
+      let jsQR; try { jsQR = (await import("https://esm.sh/jsqr@1.4.0")).default; } catch { st.className = "sstatus err"; st.textContent = "décodeur QR indisponible"; wdStopScan(); return; }
+      const cv = document.createElement("canvas"), ctx = cv.getContext("2d", { willReadFrequently: true });
+      const tick = () => {
+        if (!wdStream) return;
+        if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth) {
+          cv.width = video.videoWidth; cv.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0, cv.width, cv.height);
+          const img = ctx.getImageData(0, 0, cv.width, cv.height);
+          const code = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+          if (code?.data) return onScanned(code.data);
+        }
+        wdRAF = requestAnimationFrame(tick);
+      };
+      wdRAF = requestAnimationFrame(tick);
+    }
+
+    $("#wdBtn").addEventListener("click", () => { wdReset(); wdModal.classList.add("show"); $("#wdInvoice").focus(); });
+    $("#wdScan").addEventListener("click", wdStartScan);
+    $("#wdClose").addEventListener("click", () => { wdStopScan(); wdModal.classList.remove("show"); });
     $("#wdSend").addEventListener("click", async () => {
       const st = $("#wdStatus"), btn = $("#wdSend");
       const invoice = $("#wdInvoice").value.trim();
-      if (!/^ln(bc|tbs|tb)[0-9]/i.test(invoice)) { st.className = "sstatus err"; st.textContent = "facture lnbc… invalide"; return; }
+      const lnAddr = $("#wdLnaddr").value.trim();
+      const amount = Number($("#wdAmount").value);
+      let payload;
+      if (invoice) payload = { invoice };
+      else if (lnAddr && amount >= 1) payload = { lnAddress: lnAddr, amount };
+      else { st.className = "sstatus err"; st.textContent = "colle une facture, ou une LN address + montant"; return; }
+      wdStopScan();
       btn.disabled = true; st.className = "sstatus run"; st.textContent = "paiement en cours (swap submarine, ~qq sec)…";
       try {
-        const r = await api("/api/withdraw", { method: "POST", body: JSON.stringify({ invoice }) });
+        const r = await api("/api/withdraw", { method: "POST", body: JSON.stringify(payload) });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || "échec");
         st.className = "sstatus ok"; st.textContent = `Retiré ✓ · ${fmt(j.amount)} sats`;
-        $("#wdInvoice").value = ""; loadDashboard();
+        wdReset(); loadDashboard();
         setTimeout(() => wdModal.classList.remove("show"), 1600);
       } catch (e) {
         if (e.message === "admin") { st.className = "sstatus"; st.textContent = ""; return; }

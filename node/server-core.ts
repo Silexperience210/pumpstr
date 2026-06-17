@@ -66,6 +66,26 @@ function shortNpub(pubkey: string): string {
   try { return nip19.npubEncode(pubkey).slice(0, 11) + "…"; } catch { return pubkey.slice(0, 8) + "…"; }
 }
 
+/**
+ * Résout une Lightning Address (LUD-16) en BOLT11 pour `amountSats`, côté node
+ * (pas de CORS). HTTPS uniquement. Sert au withdraw : on saisit `nom@domaine`.
+ */
+async function resolveLnAddress(address: string, amountSats: number): Promise<string> {
+  const m = /^([a-z0-9._%+-]+)@([a-z0-9.-]+\.[a-z]{2,})$/i.exec(address.trim());
+  if (!m) throw new Error("format attendu nom@domaine");
+  const [, name, domain] = m;
+  const meta: any = await fetch(`https://${domain}/.well-known/lnurlp/${encodeURIComponent(name)}`).then((r) => r.json());
+  if (meta?.tag !== "payRequest" || !meta?.callback) throw new Error("LNURL-pay introuvable sur ce domaine");
+  const msat = amountSats * 1000;
+  if (msat < (meta.minSendable ?? 1) || msat > (meta.maxSendable ?? Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`montant hors limites (${Math.ceil((meta.minSendable ?? 0) / 1000)}–${Math.floor((meta.maxSendable ?? 0) / 1000)} sats)`);
+  }
+  const sep = String(meta.callback).includes("?") ? "&" : "?";
+  const cb: any = await fetch(`${meta.callback}${sep}amount=${msat}`).then((r) => r.json());
+  if (!cb?.pr) throw new Error(cb?.reason || "le service n'a pas renvoyé de facture");
+  return String(cb.pr);
+}
+
 function settleAndZap(
   settle: (() => Promise<{ txid: string }>) | null,
   bolt11: string | null,
@@ -175,9 +195,18 @@ export function createHandler(deps: HandlerDeps) {
       if (rl.limited) return sendJson(res, 429, { error: `rate limit — retry after ${rl.retryAfter}s` });
 
       const body = parseJson(await readBody(req));
-      const invoice = String(body.invoice ?? "").trim().toLowerCase();
+      let invoice = String(body.invoice ?? "").trim().toLowerCase();
+      const lnAddress = String(body.lnAddress ?? "").trim();
+      // Lightning Address (LUD-16) -> on résout en BOLT11 pour le montant donné.
+      if (!invoice && lnAddress) {
+        let amount: bigint;
+        try { amount = parseSats(body.amount, { min: 1n, max: 100_000_000_000n }); }
+        catch { return sendJson(res, 400, { error: "montant (sats) requis avec une Lightning Address" }); }
+        try { invoice = (await resolveLnAddress(lnAddress, Number(amount))).toLowerCase(); }
+        catch (e: any) { return sendJson(res, 400, { error: "Lightning Address : " + (e?.message ?? e) }); }
+      }
       if (!/^ln(bc|tbs|tb)[0-9]/.test(invoice)) {
-        return sendJson(res, 400, { error: "facture BOLT11 invalide (attendu lnbc… / lntbs…)" });
+        return sendJson(res, 400, { error: "fournis une facture BOLT11 (lnbc…) ou une Lightning Address + montant" });
       }
       try {
         if (!rail.withdrawToLightning) throw new Error("rail.withdrawToLightning non disponible");
