@@ -87,6 +87,12 @@
 
   let total = 0, shown = 0, comboTimer = null, combo = 0;
   const fmt = (n) => n.toLocaleString("fr-FR");
+  // TTS : lit le message du tip à voix haute (capté dans l'audio du stream). ?mute=1 pour couper.
+  const TTS = new URLSearchParams(location.search).get("mute") !== "1";
+  function speak(text) {
+    if (!TTS || !window.speechSynthesis || !text) return;
+    try { const u = new SpeechSynthesisUtterance(text); u.lang = "fr-FR"; u.rate = 1.03; speechSynthesis.speak(u); } catch {}
+  }
 
   function animateCount() {
     const step = () => {
@@ -142,6 +148,7 @@
     flashEl.classList.remove("on"); void flashEl.offsetWidth; flashEl.classList.add("on");
     shockwave();
     floatTip(tip);
+    if (tip.comment) speak(`${tip.name || "anon"}, ${fmt(tip.amount)} sats. ${tip.comment}`); // message lu à voix haute
     tickerEl.innerHTML = `dernier tip : <b>+${fmt(tip.amount)} sats</b> par ${esc(tip.name || "anon")}`;
     combo += tip.amount;
     hypeEl.style.width = Math.min(100, (combo / 21000) * 100) + "%";

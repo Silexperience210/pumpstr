@@ -121,7 +121,17 @@
   }
   function stopHls() { if (hls) { try { hls.destroy(); } catch {} hls = null; } vid.removeAttribute("src"); try { vid.load(); } catch {} }
   playHls();
-  document.getElementById("unmute").onclick = (e) => { vid.muted = false; vid.play(); e.target.style.display = "none"; };
+  // TTS : lit les messages des tips à voix haute. Débloqué par le geste « activer le son ».
+  let ttsOn = false;
+  function speak(text) {
+    if (!ttsOn || !window.speechSynthesis || !text) return;
+    try { const u = new SpeechSynthesisUtterance(text); u.lang = "fr-FR"; u.rate = 1.03; speechSynthesis.speak(u); } catch {}
+  }
+  document.getElementById("unmute").onclick = (e) => {
+    vid.muted = false; vid.play(); e.target.style.display = "none";
+    ttsOn = true;
+    try { speechSynthesis.getVoices(); speechSynthesis.speak(new SpeechSynthesisUtterance(" ")); } catch {} // débloque l'audio TTS dans ce geste
+  };
 
   let creatorPk = null;
   fetch("/api/creator").then((r) => r.json()).then((j) => {
@@ -193,6 +203,7 @@
   function floatTip(t) {
     total = (typeof t.pot === "number") ? t.pot : total + t.amount; // cagnotte serveur = tous les viewers synchro
     animate(); pulseCount(); coinBurst(t.amount);
+    if (t.comment) speak(`${t.name || "anon"}, ${fmt(t.amount)} sats. ${t.comment}`); // message lu à voix haute
     if (t.amount >= 2000) screenFlash();                            // gros tip = flash plein écran
     const big = Math.min(1.9, 1 + t.amount / 6000);                 // gros tip = gros plan
     const f = document.createElement("div"); f.className = "float";
