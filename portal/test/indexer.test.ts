@@ -3,7 +3,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { upsert, list, cleanup, resetCache, tagv } from "../indexer.js";
+import { upsert, list, cleanup, resetCache, tagv, ingestZap, satsFor, leaderboard, resetZaps } from "../indexer.js";
 
 function makeEvent(overrides: Partial<{ id: string; pubkey: string; created_at: number; status: string; d: string; streaming: string; r: string; title: string }> = {}) {
   return {
@@ -88,4 +88,60 @@ test("nodeUrl et streaming extraits", () => {
   const items = list();
   assert.equal(items[0].streaming, "https://stream/hls.m3u8");
   assert.equal(items[0].nodeUrl, "https://node.example.com");
+});
+
+// ---- indexer trending / leaderboard (agrégation des zaps 9735) ----
+function makeZap(o: { id?: string; host?: string; msat?: number; created_at?: number } = {}) {
+  return {
+    id: o.id ?? "z1", pubkey: "node", kind: 9735, created_at: o.created_at ?? 1_000_000,
+    tags: [["p", o.host ?? "pk1"], ["amount", String(o.msat ?? 21_000_000)]],
+    content: "", sig: "s",
+  } as any;
+}
+
+test("ingestZap agrège les sats par hôte et dédupe par id", () => {
+  resetZaps();
+  assert.equal(ingestZap(makeZap({ id: "z1", host: "pk1", msat: 21_000_000 })), true);
+  assert.equal(ingestZap(makeZap({ id: "z1", host: "pk1", msat: 21_000_000 })), false); // même id -> ignoré
+  assert.equal(ingestZap(makeZap({ id: "z2", host: "pk1", msat: 1_000_000 })), true);
+  assert.equal(satsFor("pk1"), 22_000);
+  assert.equal(satsFor("inconnu"), 0);
+});
+
+test("ingestZap ignore sans hôte ou montant nul", () => {
+  resetZaps();
+  assert.equal(ingestZap({ id: "z3", tags: [["amount", "1000"]] }), false); // pas de tag p
+  assert.equal(ingestZap({ id: "z4", tags: [["p", "pk1"], ["amount", "0"]] }), false);
+  assert.equal(satsFor("pk1"), 0);
+});
+
+test("list expose les sats agrégés par live", () => {
+  resetCache(); resetZaps();
+  upsert(makeEvent({ pubkey: "pk1" }));
+  ingestZap(makeZap({ id: "z1", host: "pk1", msat: 5_000_000 }));
+  assert.equal(list()[0].sats, 5_000);
+});
+
+test("list sort=trending classe par vélocité de sats", () => {
+  resetCache(); resetZaps();
+  upsert(makeEvent({ id: "a", pubkey: "pkA", d: "a", created_at: 1_000_000, status: "live" }));
+  upsert(makeEvent({ id: "b", pubkey: "pkB", d: "b", created_at: 1_000_000, status: "live" }));
+  const nowS = Math.floor(Date.now() / 1000);
+  ingestZap(makeZap({ id: "z1", host: "pkB", msat: 50_000_000, created_at: nowS })); // gros + récent
+  ingestZap(makeZap({ id: "z2", host: "pkA", msat: 1_000_000, created_at: nowS }));
+  const t = list(undefined, "trending");
+  assert.equal(t[0].pubkey, "pkB");
+  assert.equal(t[0].sats >= t[1].sats, true);
+});
+
+test("leaderboard classe les créateurs par sats reçus", () => {
+  resetCache(); resetZaps();
+  upsert(makeEvent({ pubkey: "pk1", title: "Alice" }));
+  ingestZap(makeZap({ id: "z1", host: "pk1", msat: 9_000_000 }));
+  ingestZap(makeZap({ id: "z2", host: "pk2", msat: 21_000_000 }));
+  const lb = leaderboard();
+  assert.equal(lb[0].pubkey, "pk2");
+  assert.equal(lb[0].sats, 21_000);
+  assert.equal(lb[1].pubkey, "pk1");
+  assert.equal(lb[1].title, "Alice");
 });

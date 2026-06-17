@@ -10,8 +10,26 @@
   .brand{ font-family:var(--display); font-weight:800; font-size:clamp(26px,5vw,40px); letter-spacing:-.03em; }
   .brand b{ color:var(--lime); text-shadow:0 0 26px rgba(188,255,46,.45); }
   .tag{ color:var(--txt-dim); font-size:13px; margin-top:4px; }
+  .hd-right{ display:flex; flex-direction:column; align-items:flex-end; gap:9px; }
   .status{ font-family:var(--mono); font-size:12px; color:var(--txt-faint); display:flex; align-items:center; gap:7px; }
   .status .dot{ width:8px; height:8px; border-radius:50%; background:var(--lime); box-shadow:0 0 10px var(--lime); animation:psBlink 1.4s infinite; }
+  .controls{ display:flex; gap:8px; align-items:center; }
+  .sortbtn{ font-family:var(--mono); font-size:12px; font-weight:700; letter-spacing:.04em; padding:8px 14px; border-radius:99px;
+    background:rgba(255,255,255,.03); border:1px solid var(--line-2); color:var(--txt-dim); cursor:pointer; transition:.16s var(--ease); }
+  .sortbtn:hover{ border-color:var(--line); color:var(--txt); }
+  .sortbtn.on{ background:rgba(188,255,46,.12); border-color:var(--lime); color:var(--lime); }
+
+  /* leaderboard fédéré (agrégation des zaps 9735) */
+  .lb{ max-width:1280px; margin:0 auto; padding:8px 26px 0; display:flex; gap:12px; flex-wrap:wrap; align-items:stretch; }
+  .lb[hidden]{ display:none; }
+  .lb .lbk{ font-family:var(--mono); font-size:11px; letter-spacing:.28em; text-transform:uppercase; color:var(--txt-faint); align-self:center; }
+  .lbcard{ display:flex; align-items:center; gap:11px; padding:10px 15px; border-radius:var(--r);
+    background:linear-gradient(180deg,var(--surface-2),var(--surface)); border:1px solid var(--line-2); backdrop-filter:blur(12px); }
+  .lbcard .rank{ font-family:var(--display); font-weight:800; font-size:19px; color:var(--lime-soft); width:20px; text-align:center; }
+  .lbcard .rank.r1{ color:var(--amber); text-shadow:0 0 16px rgba(255,177,59,.5); }
+  .lbcard img{ width:32px; height:32px; border-radius:50%; background:var(--ink-2); border:1px solid var(--line); }
+  .lbcard .who{ font-family:var(--mono); font-size:12px; color:var(--txt); line-height:1.25; }
+  .lbcard .who small{ display:block; color:var(--lime); font-weight:800; }
 
   .grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:20px; padding:20px 26px 60px; max-width:1280px; margin:0 auto; }
   .card{ display:flex; flex-direction:column; overflow:hidden; border-radius:var(--r);
@@ -25,6 +43,9 @@
   .badge{ position:absolute; top:11px; left:11px; font-family:var(--mono); font-size:11px; font-weight:800; padding:4px 10px; border-radius:99px;
     background:var(--lime); color:#06200a; letter-spacing:.06em; box-shadow:0 0 18px -4px rgba(188,255,46,.7); }
   .badge.ended{ background:rgba(255,255,255,.08); color:var(--txt-dim); box-shadow:none; }
+  .sats{ position:absolute; top:11px; right:11px; font-family:var(--mono); font-size:12px; font-weight:800; padding:4px 10px; border-radius:99px;
+    background:rgba(0,0,0,.62); color:var(--lime); text-shadow:0 0 12px rgba(188,255,46,.6); }
+  .sats.hot{ animation:psPump 2s var(--ease) infinite; }
   .viewers{ position:absolute; bottom:11px; right:11px; font-family:var(--mono); font-size:11px; font-weight:700; padding:3px 9px; border-radius:99px; background:rgba(0,0,0,.6); color:var(--lime-soft); }
   .body{ padding:15px; flex:1; display:flex; flex-direction:column; gap:11px; }
   .title{ font-family:var(--display); font-weight:700; font-size:17px; line-height:1.22; }
@@ -32,6 +53,8 @@
   .host img{ width:30px; height:30px; border-radius:50%; background:var(--ink-2); border:1px solid var(--line); }
   .host .n{ font-family:var(--mono); font-size:13px; color:var(--txt); } .host .n small{ display:block; color:var(--txt-faint); font-size:10px; }
   .summary{ font-size:12px; color:var(--txt-dim); flex:1; }
+  .nodeline{ font-family:var(--mono); font-size:10px; color:var(--txt-faint); letter-spacing:.02em; display:flex; align-items:center; gap:5px; }
+  .nodeline b{ color:var(--lime-soft); font-weight:500; }
   .watch{ display:block; text-align:center; padding:12px; border-radius:var(--r-sm); font-family:var(--mono); font-weight:700;
     font-size:13px; letter-spacing:.04em; text-transform:uppercase; text-decoration:none; background:var(--lime); color:#06200a; transition:.18s var(--ease); }
   .watch:hover{ filter:brightness(1.06); box-shadow:0 10px 30px -8px rgba(188,255,46,.6); transform:translateY(-1px); }
@@ -51,10 +74,19 @@
       <div class="brand">⚡<b>PUMPSTR</b> lives</div>
       <div class="tag">une lentille Nostr (NIP-53) sur le réseau — pas une base centrale</div>
     </div>
-    <div class="status"><span class="dot"></span><span id="stat">connexion aux relais…</span></div>
+    <div class="hd-right">
+      <div class="status"><span class="dot"></span><span id="stat">connexion aux relais…</span></div>
+      <div class="controls">
+        <button class="sortbtn on" id="sortRecent" data-sort="recent">🕐 Récents</button>
+        <button class="sortbtn" id="sortTrending" data-sort="trending">🔥 Trending</button>
+      </div>
+    </div>
   </header>
+
+  <div class="lb" id="lb" hidden></div>
+
   <div class="grid" id="grid"><div class="empty" id="empty"><div class="big">📡</div>à l'écoute des lives <b>#pumpstr</b>…</div></div>
-  <footer>L'agrégation EST le réseau Nostr. N'importe qui peut lancer un autre portail sur les mêmes events.</footer>
+  <footer>Le classement EST agrégé depuis Nostr (zaps NIP-57). N'importe qui peut lancer un autre portail sur les mêmes events — aucun chokepoint.</footer>
 
 <script type="module">
   import { SimplePool, nip19 } from "https://esm.sh/nostr-tools@2";
@@ -64,13 +96,51 @@
   const dicebear = (s) => `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(s || "x")}`;
   const esc = (s) => String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;", '"':"&quot;" }[c]));
   const tagv = (ev, k) => (ev.tags.find((t) => t[0] === k) || [])[1];
+  const fmt = (n) => new Intl.NumberFormat("fr-FR").format(Math.round(n || 0));
+  const TRENDING_HALFLIFE_MS = 3600_000; // 1h
 
   const lives = new Map();
   const profiles = new Map();
+  const zaps = new Map();        // pubkey hôte -> { total, recent:[{amount,at}] }
+  const seenZaps = new Set();
+  let sortMode = "recent";
+
   const gridEl = document.getElementById("grid");
   const emptyEl = document.getElementById("empty");
   const statEl = document.getElementById("stat");
+  const lbEl = document.getElementById("lb");
 
+  /* ---------- agrégation fédérée des zaps (NIP-57 kind:9735) ---------- */
+  function ingestZap(ev) {
+    if (!ev?.id || seenZaps.has(ev.id)) return;
+    const host = tagv(ev, "p");
+    const sats = Math.floor(Number(tagv(ev, "amount") || 0) / 1000);
+    if (!host || !(sats > 0)) return;
+    seenZaps.add(ev.id);
+    const agg = zaps.get(host) || { total: 0, recent: [] };
+    agg.total += sats; agg.recent.push({ amount: sats, at: (ev.created_at || 0) * 1000 });
+    zaps.set(host, agg);
+    render();
+  }
+  const satsFor = (pk) => zaps.get(pk)?.total || 0;
+  function trendingScore(pk, now) {
+    const agg = zaps.get(pk); if (!agg) return 0;
+    let s = 0; for (const z of agg.recent) s += z.amount * Math.pow(0.5, (now - z.at) / TRENDING_HALFLIFE_MS);
+    return s;
+  }
+
+  // (re)souscrit aux zaps des hôtes connus (les 9735 taguent l'hôte via `p`, pas de #t)
+  let zapSub = null, knownHosts = new Set();
+  function refreshZapSub() {
+    const hosts = [...new Set([...lives.values()].map((e) => e.pubkey))];
+    if (hosts.length === knownHosts.size && hosts.every((h) => knownHosts.has(h))) return;
+    knownHosts = new Set(hosts);
+    zapSub?.close();
+    if (!hosts.length) return;
+    zapSub = pool.subscribeMany(RELAYS, [{ kinds: [9735], "#p": hosts }], { onevent: ingestZap });
+  }
+
+  /* ---------- profils ---------- */
   async function profileOf(pubkey) {
     if (profiles.has(pubkey)) return profiles.get(pubkey);
     const fallback = { name: nip19.npubEncode(pubkey).slice(0, 11) + "…", picture: dicebear(pubkey) };
@@ -93,13 +163,38 @@
     if (prev && prev.created_at >= ev.created_at) return;
     lives.set(key, ev);
     profileOf(ev.pubkey);
+    refreshZapSub();
     render();
   }
 
+  /* ---------- leaderboard (top créateurs par sats reçus) ---------- */
+  function renderLeaderboard() {
+    const leaders = [...zaps.entries()].map(([pk, a]) => ({ pk, sats: a.total }))
+      .filter((x) => x.sats > 0).sort((a, b) => b.sats - a.sats).slice(0, 3);
+    if (!leaders.length) { lbEl.hidden = true; lbEl.innerHTML = ""; return; }
+    lbEl.hidden = false;
+    lbEl.innerHTML = `<span class="lbk">🏆 top sats</span>` + leaders.map((l, i) => {
+      const prof = profiles.get(l.pk) || { name: nip19.npubEncode(l.pk).slice(0, 11) + "…", picture: dicebear(l.pk) };
+      return `<div class="lbcard">
+        <span class="rank ${i === 0 ? "r1" : ""}">${i + 1}</span>
+        <img src="${esc(prof.picture)}" onerror="this.src='${dicebear(l.pk)}'" />
+        <div class="who">${esc(prof.name)}<small>${fmt(l.sats)} sats</small></div>
+      </div>`;
+    }).join("");
+  }
+
+  /* ---------- grille ---------- */
   function render() {
+    renderLeaderboard();
+    const now = Date.now();
     const items = [...lives.values()].sort((a, b) => {
       const sa = tagv(a, "status") === "live" ? 1 : 0, sb = tagv(b, "status") === "live" ? 1 : 0;
-      return sb - sa || b.created_at - a.created_at;
+      if (sb !== sa) return sb - sa;
+      if (sortMode === "trending") {
+        const ta = trendingScore(a.pubkey, now), tb = trendingScore(b.pubkey, now);
+        if (tb !== ta) return tb - ta;
+      }
+      return b.created_at - a.created_at;
     });
     if (!items.length) { gridEl.innerHTML = ""; gridEl.appendChild(emptyEl); return; }
     gridEl.innerHTML = items.map((ev) => {
@@ -111,6 +206,9 @@
       const summary = tagv(ev, "summary") || "";
       const nodeUrl = tagv(ev, "r") || "";
       const streamUrl = tagv(ev, "streaming") || "";
+      const sats = satsFor(ev.pubkey);
+      const hot = sortMode === "trending" && trendingScore(ev.pubkey, now) > 0;
+      let nodeHost = ""; try { nodeHost = nodeUrl ? new URL(nodeUrl).host : ""; } catch {}
       const watchUrl = nodeUrl
         ? `${nodeUrl.replace(/\/$/, "")}/watch.html${streamUrl ? "?stream=" + encodeURIComponent(streamUrl) : ""}`
         : "/watch.html";
@@ -118,6 +216,7 @@
         <div class="thumb">
           ${img ? `<img src="${esc(img)}" onerror="this.remove()" />` : `<span class="ph">📡</span>`}
           <span class="badge ${status === "live" ? "" : "ended"}">${status === "live" ? "● LIVE" : "terminé"}</span>
+          ${sats > 0 ? `<span class="sats ${hot ? "hot" : ""}">🔥 ${fmt(sats)}</span>` : ""}
           ${viewers ? `<span class="viewers">👁 ${esc(viewers)}</span>` : ""}
         </div>
         <div class="body">
@@ -127,18 +226,30 @@
             <div class="n">${esc(prof.name)}<small>${esc(nip19.npubEncode(ev.pubkey).slice(0, 14))}…</small></div>
           </div>
           <div class="summary">${esc(summary)}</div>
+          ${nodeHost ? `<div class="nodeline">↪ regarder sur <b>${esc(nodeHost)}</b></div>` : ""}
           <a class="watch" href="${esc(watchUrl)}">▶ Regarder &amp; tipper</a>
         </div>
       </div>`;
     }).join("");
   }
 
+  /* ---------- tri ---------- */
+  for (const btn of document.querySelectorAll(".sortbtn")) {
+    btn.addEventListener("click", () => {
+      sortMode = btn.dataset.sort;
+      document.querySelectorAll(".sortbtn").forEach((b) => b.classList.toggle("on", b === btn));
+      render();
+    });
+  }
+
+  /* ---------- souscription lives ---------- */
   const sub = pool.subscribeMany(RELAYS, [{ kinds: [30311], "#t": ["pumpstr"] }], {
     onevent: (ev) => { statEl.textContent = "à l'écoute · " + lives.size + " live(s)"; upsert(ev); },
     oneose: () => { statEl.textContent = lives.size ? "à l'écoute · " + lives.size + " live(s)" : "aucun live #pumpstr pour l'instant"; },
   });
+  setInterval(render, 30_000); // rafraîchit le trending (décroissance temporelle)
   setTimeout(() => { if (!lives.size) statEl.textContent = "aucun live #pumpstr pour l'instant"; }, 6000);
-  window.addEventListener("beforeunload", () => sub.close());
+  window.addEventListener("beforeunload", () => { sub.close(); zapSub?.close(); });
 </script>
 </body>
 </html>
