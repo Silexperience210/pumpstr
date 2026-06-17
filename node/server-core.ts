@@ -248,9 +248,9 @@ export function createHandler(deps: HandlerDeps) {
       const msats = Number(url.searchParams.get("amount") || 0);
       let sats: bigint;
       try {
-        sats = parseSats(Math.floor(msats / 1000));
-      } catch (e: any) {
-        return sendJson(res, 200, { status: "ERROR", reason: e?.message ?? "montant invalide" });
+        sats = parseSats(Math.floor(msats / 1000), { min: 333n, max: 100_000_000_000n });
+      } catch {
+        return sendJson(res, 200, { status: "ERROR", reason: "montant invalide — minimum 333 sats (swap Lightning entrant)" });
       }
 
       let zapRequest: any = null;
@@ -281,9 +281,10 @@ export function createHandler(deps: HandlerDeps) {
       const body = parseJson(await readBody(req));
       let amount: bigint;
       try {
-        amount = parseSats(body.amount, { min: 1n, max: 100_000_000_000n });
-      } catch (e: any) {
-        return sendJson(res, 400, { error: e?.message ?? "montant invalide" });
+        // Un tip entre via un swap Boltz reverse (LN -> Arkade) : plancher Boltz = 333 sats.
+        amount = parseSats(body.amount, { min: 333n, max: 100_000_000_000n });
+      } catch {
+        return sendJson(res, 400, { error: "montant invalide — minimum 333 sats (plancher d'un swap Lightning entrant)" });
       }
       const zapRequest = body?.zapRequest;
       const tipper = await helpers.tipperFromBody(body, "ln");

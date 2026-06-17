@@ -83,7 +83,7 @@
       <button id="connect" class="ps-btn ps-btn--ghost" style="margin-left:auto;padding:8px 11px;font-size:11px">⚡ Connecter Nostr</button>
     </div>
     <div class="controls">
-      <div class="amt sel" data-v="210">210</div>
+      <div class="amt sel" data-v="500">500</div>
       <div class="amt" data-v="2100">2 100</div>
       <div class="amt" data-v="21000">21 000</div>
       <input id="comment" class="ps-input" placeholder="un mot ?" maxlength="140" />
@@ -143,7 +143,7 @@
   };
   setEph();
 
-  let amount = 210;
+  let amount = 500;
   const ctrl = document.querySelector(".controls");
   ctrl.addEventListener("click", (e) => { const el = e.target.closest(".amt"); if (!el) return;
     document.querySelectorAll(".amt").forEach((c) => c.classList.remove("sel")); el.classList.add("sel"); amount = Number(el.dataset.v); });

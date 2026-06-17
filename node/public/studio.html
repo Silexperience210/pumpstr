@@ -45,7 +45,11 @@
     .row{ display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
     .field{ flex:1; min-width:200px; }
     .field label{ display:block; font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--txt-faint); margin-bottom:6px; }
-    select.ps-input{ appearance:none; cursor:pointer; }
+    select.ps-input{ appearance:none; cursor:pointer; padding-right:34px;
+      background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' stroke='%23bcff2e' stroke-width='2' fill='none'/></svg>");
+      background-repeat:no-repeat; background-position:right 13px center; }
+    .devhint{ font-size:11px; color:var(--txt-faint); margin-top:11px; line-height:1.5; }
+    .devhint b{ color:var(--lime-soft); font-weight:500; }
     .btns{ display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
     .ps-btn--rec{ background:var(--magenta); color:#fff; } .ps-btn--rec:hover{ filter:brightness(1.08); box-shadow:0 10px 30px -10px rgba(255,46,147,.6); }
     .timer{ font-family:var(--mono); font-weight:800; font-variant-numeric:tabular-nums; color:var(--magenta); align-self:center; font-size:15px; }
@@ -91,13 +95,17 @@
       <div class="row">
         <div class="field">
           <label>🎥 Caméra</label>
-          <select id="camSel" class="ps-input"><option value="">caméra par défaut</option></select>
+          <div style="display:flex;gap:8px">
+            <select id="camSel" class="ps-input" style="flex:1"><option value="">caméra par défaut</option></select>
+            <button class="ps-btn ps-btn--ghost" id="cycleCam" title="Caméra suivante" style="padding:0 15px;flex:0 0 auto">🔄</button>
+          </div>
         </div>
         <div class="field">
           <label>🎙️ Micro</label>
           <select id="micSel" class="ps-input"><option value="">micro par défaut</option></select>
         </div>
       </div>
+      <div class="devhint" id="devhint">▶ Démarre la caméra — puis choisis ta <b>webcam laptop ou USB</b> dans la liste (ou <b>🔄</b> pour alterner). Une caméra USB branchée apparaît toute seule.</div>
       <div class="btns">
         <button class="ps-btn ps-btn--pump" id="startBtn">▶ Démarrer</button>
         <button class="ps-btn ps-btn--ghost" id="flipBtn" disabled>🔄 Miroir</button>
@@ -153,19 +161,34 @@
       return "Erreur caméra : " + (e?.message || n || e);
     }
 
+    let videoDevices = [], audioDevices = [];
     async function listDevices() {
       try {
         const devs = await navigator.mediaDevices.enumerateDevices();
-        const fill = (sel, kind, label) => {
-          const cur = sel.value;
-          const items = devs.filter((d) => d.kind === kind);
-          sel.innerHTML = `<option value="">${label}</option>` +
-            items.map((d, i) => `<option value="${d.deviceId}">${(d.label || `${label.split(" ")[1]} ${i + 1}`).replace(/</g, "")}</option>`).join("");
-          if (cur && items.some((d) => d.deviceId === cur)) sel.value = cur;
+        videoDevices = devs.filter((d) => d.kind === "videoinput");
+        audioDevices = devs.filter((d) => d.kind === "audioinput");
+        const fill = (sel, items, dft, base) => {
+          // reflète le device RÉELLEMENT actif (pas juste la valeur du select)
+          const active = (sel === camSel ? stream?.getVideoTracks?.()[0] : stream?.getAudioTracks?.()[0])?.getSettings?.().deviceId;
+          sel.innerHTML = `<option value="">${dft}</option>` +
+            items.map((d, i) => `<option value="${d.deviceId}">${(d.label || `${base} ${i + 1}`).replace(/</g, "")}</option>`).join("");
+          if (active && items.some((d) => d.deviceId === active)) sel.value = active;
         };
-        fill(camSel, "videoinput", "caméra par défaut");
-        fill(micSel, "audioinput", "micro par défaut");
+        fill(camSel, videoDevices, "caméra par défaut", "Caméra");
+        fill(micSel, audioDevices, "micro par défaut", "Micro");
+        $("#devhint").innerHTML = videoDevices.length > 1
+          ? `${videoDevices.length} caméras détectées — choisis dans la liste ou <b>🔄</b> pour alterner.`
+          : `1 caméra détectée. Branche une <b>USB</b> → elle apparaît automatiquement.`;
       } catch { /* énumération impossible avant permission */ }
+    }
+    async function cycleCam() {
+      if (!stream) return setStatus("démarre la caméra d'abord (▶).", "err");
+      if (videoDevices.length < 2) return setStatus("une seule caméra détectée (branche une USB).", "run");
+      const cur = stream.getVideoTracks()[0]?.getSettings?.().deviceId || camSel.value;
+      let i = videoDevices.findIndex((d) => d.deviceId === cur);
+      i = (i + 1) % videoDevices.length;
+      camSel.value = videoDevices[i].deviceId;
+      await start();
     }
 
     function startMeter(s) {
@@ -188,7 +211,13 @@
       const video = camSel.value ? { deviceId: { exact: camSel.value } } : { facingMode: "user" };
       const audio = micSel.value ? { deviceId: { exact: micSel.value } } : true;
       try { stream = await navigator.mediaDevices.getUserMedia({ video, audio }); }
-      catch (e) { setStatus(gumError(e), "err"); return; }
+      catch (e) {
+        // device demandé indisponible -> on retombe sur n'importe quelle caméra/micro
+        if (e.name === "OverconstrainedError" || e.name === "NotFoundError") {
+          try { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); }
+          catch (e2) { setStatus(gumError(e2), "err"); return; }
+        } else { setStatus(gumError(e), "err"); return; }
+      }
       preview.srcObject = stream; idle.style.display = "none";
       await preview.play().catch(() => {});
       await listDevices();           // labels dispos seulement après permission
@@ -299,8 +328,10 @@
     recBtn.addEventListener("click", () => { (recorder && recorder.state === "recording") ? stopRec() : startRec(); });
     $("#liveBtn").addEventListener("click", goLive);
     flipBtn.addEventListener("click", () => preview.classList.toggle("mirror"));
+    $("#cycleCam").addEventListener("click", cycleCam);
     camSel.addEventListener("change", () => { if (stream) start(); });
     micSel.addEventListener("change", () => { if (stream) start(); });
+    navigator.mediaDevices?.addEventListener?.("devicechange", () => { if (stream) listDevices(); }); // USB branchée/débranchée
     document.querySelector(".timer")?.addEventListener("click", stopRec);
     $("#clipClose").addEventListener("click", () => $("#clipBox").classList.remove("show"));
     $("#recdot").addEventListener("click", stopRec); // l'icône REC sert aussi de stop

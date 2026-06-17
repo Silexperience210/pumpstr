@@ -55,7 +55,7 @@
     </div>
 
     <div class="row" id="amts">
-      <div class="amt sel" data-v="210">210<small>sats</small></div>
+      <div class="amt sel" data-v="500">500<small>sats</small></div>
       <div class="amt" data-v="2100">2 100<small>sats</small></div>
       <div class="amt" data-v="21000">21 000<small>sats</small></div>
     </div>
@@ -107,7 +107,7 @@
   let creatorPk = null;
   fetch("/api/creator").then(r => r.json()).then(j => { try { creatorPk = nip19.decode(j.npub).data; } catch {} });
 
-  let amount = 210;
+  let amount = 500;
   const amts = document.getElementById("amts");
   amts.addEventListener("click", (e) => {
     const el = e.target.closest(".amt"); if (!el) return;
