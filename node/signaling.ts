@@ -12,7 +12,7 @@
  */
 type WsLike = { send: (s: string) => void; readyState: number };
 
-export function createSignaling(broadcastAll: (msg: any) => void) {
+export function createSignaling(broadcastAll: (msg: any) => void, opts: { onGoLive?: () => void } = {}) {
   let broadcaster: WsLike | null = null;
   const viewers = new Map<string, WsLike>();
   const ids = new WeakMap<WsLike, string>();
@@ -26,6 +26,7 @@ export function createSignaling(broadcastAll: (msg: any) => void) {
     switch (m.type) {
       case "golive": // le créateur passe en direct ; (re)déclenche le handshake avec les viewers présents
         broadcaster = ws;
+        opts.onGoLive?.(); // reset de la cagnotte du live côté serveur
         for (const [vid] of viewers) send(broadcaster, { type: "viewer-join", from: vid });
         broadcastAll({ type: "live-started" });
         break;

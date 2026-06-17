@@ -135,7 +135,7 @@
   }
 
   function onTip(tip) {
-    total += tip.amount;
+    total = (typeof tip.pot === "number") ? tip.pot : total + tip.amount; // cagnotte serveur (synchro viewers)
     animateCount();
     counterEl.classList.add("pop");
     setTimeout(() => counterEl.classList.remove("pop"), 200);
@@ -157,7 +157,9 @@
         addrEl.textContent = m.npub ? m.npub.slice(0, 12) + "…" + m.npub.slice(-6)
           : (m.address ? m.address.slice(0, 12) + "…" : "");
       } else if (m.type === "tip") {
-        onTip({ amount: Number(m.amount), name: m.name, picture: m.picture, comment: m.comment, pubkey: m.pubkey });
+        onTip({ amount: Number(m.amount), pot: m.pot, name: m.name, picture: m.picture, comment: m.comment, pubkey: m.pubkey });
+      } else if (m.type === "pot") {
+        total = Number(m.pot) || 0; animateCount();
       }
     };
     ws.onclose = () => setTimeout(connect, 1500);

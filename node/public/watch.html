@@ -14,9 +14,24 @@
   .top{ position:fixed; top:16px; left:18px; right:18px; display:flex; align-items:center; gap:12px; z-index:2; }
   .brand{ font-family:var(--display); font-weight:800; font-size:18px; } .brand b{ color:var(--lime); }
   .demo{ font-family:var(--mono); font-size:11px; font-weight:700; color:#06200a; background:var(--lime); padding:3px 9px; border-radius:99px; }
-  .host{ margin-left:auto; display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:13px; color:var(--txt-dim); }
+  .host{ display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:13px; color:var(--txt-dim); }
   .host img{ width:28px; height:28px; border-radius:50%; background:var(--ink-2); border:1px solid var(--line); }
-  .count{ font-family:var(--mono); font-weight:800; color:var(--lime); text-shadow:0 0 14px rgba(188,255,46,.5); }
+  /* LA cagnotte : pill lumineuse qui vibre/zoome quand elle monte */
+  .pot{ margin-left:auto; display:flex; align-items:baseline; gap:6px; background:rgba(11,17,13,.7); border:1px solid rgba(188,255,46,.4);
+    border-radius:99px; padding:6px 15px; backdrop-filter:blur(10px); box-shadow:0 0 26px -6px rgba(188,255,46,.5); }
+  .pot .fire{ font-size:15px; align-self:center; }
+  .pot .u{ font-family:var(--mono); font-size:11px; font-weight:500; color:var(--lime-soft); opacity:.85; }
+  .count{ display:inline-block; font-family:var(--mono); font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:-.02em;
+    font-size:clamp(20px,4.4vw,32px); line-height:1; color:var(--lime); text-shadow:0 0 16px rgba(188,255,46,.6); transform-origin:center; }
+  .count.pop{ animation:countPop .6s cubic-bezier(.2,1.5,.4,1); }
+  @keyframes countPop{ 0%{transform:scale(1)} 22%{transform:scale(1.5) rotate(-3deg); filter:brightness(1.7) drop-shadow(0 0 22px var(--lime))}
+    50%{transform:scale(1.12) rotate(2deg)} 72%{transform:scale(1.22) rotate(-1deg)} 100%{transform:scale(1); filter:none} }
+  #tipflash{ position:fixed; inset:0; pointer-events:none; opacity:0; z-index:1; background:radial-gradient(60% 50% at 50% 26%, rgba(188,255,46,.30), transparent 70%); }
+  #tipflash.on{ animation:tipflash .65s ease-out; }
+  @keyframes tipflash{ 0%{opacity:1} 100%{opacity:0} }
+  .coin{ position:fixed; z-index:2; pointer-events:none; font-size:26px; will-change:transform,opacity; animation:coinfly 1.6s ease-out forwards; }
+  @keyframes coinfly{ 0%{opacity:0; transform:translate(-50%,-50%) scale(.5)} 12%{opacity:1}
+    100%{opacity:0; transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) rotate(var(--rot)) scale(1.15)} }
 
   .float{ position:fixed; left:50%; bottom:170px; transform:translateX(-50%); text-align:center; pointer-events:none; z-index:2;
     animation:rise 2.4s cubic-bezier(.2,.8,.2,1) forwards; }
@@ -50,12 +65,14 @@
 <body>
   <video id="vid" autoplay muted playsinline></video>
   <div class="scrim"></div>
+  <div id="tipflash"></div>
 
   <div class="top">
     <div class="brand">⚡<b>PUMPSTR</b></div>
     <div class="ps-pill ps-pill--live">Live</div>
     <span class="demo" id="demo" style="display:none">flux démo</span>
-    <div class="host"><span class="count" id="count">0</span> sats · <img id="hostAva" alt="" /> <span id="hostName">…</span></div>
+    <div class="pot" id="pot"><span class="fire">🔥</span><span class="count" id="count">0</span><span class="u">sats</span></div>
+    <div class="host"><img id="hostAva" alt="" /> <span id="hostName">…</span></div>
   </div>
 
   <button id="unmute" class="ps-btn ps-btn--ghost">🔊 activer le son</button>
@@ -156,11 +173,31 @@
   let total = 0, shown = 0;
   const countEl = document.getElementById("count");
   function animate() { const step = () => { const d = total - shown; if (Math.abs(d) < 1) { shown = total; countEl.textContent = fmt(total); return; } shown += d * 0.2; countEl.textContent = fmt(Math.round(shown)); requestAnimationFrame(step); }; step(); }
+  const COINS = ["⚡", "🪙", "₿", "✦", "💸"];
+  function pulseCount() { countEl.classList.remove("pop"); void countEl.offsetWidth; countEl.classList.add("pop"); }
+  function screenFlash() { const f = document.getElementById("tipflash"); f.classList.remove("on"); void f.offsetWidth; f.classList.add("on"); }
+  function coinBurst(amount) {
+    const r = document.getElementById("pot").getBoundingClientRect();
+    const ox = r.left + r.width / 2, oy = r.top + r.height / 2;
+    const n = Math.min(34, 6 + Math.round(amount / 500));        // plus c'est gros, plus ça crache
+    for (let i = 0; i < n; i++) {
+      const c = document.createElement("div"); c.className = "coin"; c.textContent = COINS[(Math.random() * COINS.length) | 0];
+      c.style.left = ox + "px"; c.style.top = oy + "px";
+      c.style.setProperty("--dx", (Math.random() * 420 - 210) + "px");
+      c.style.setProperty("--dy", (Math.random() * 520 - 160) + "px");
+      c.style.setProperty("--rot", (Math.random() * 760 - 380) + "deg");
+      c.style.animationDelay = (Math.random() * .18) + "s";
+      document.body.appendChild(c); setTimeout(() => c.remove(), 1700);
+    }
+  }
   function floatTip(t) {
-    total += t.amount; animate();
+    total = (typeof t.pot === "number") ? t.pot : total + t.amount; // cagnotte serveur = tous les viewers synchro
+    animate(); pulseCount(); coinBurst(t.amount);
+    if (t.amount >= 2000) screenFlash();                            // gros tip = flash plein écran
+    const big = Math.min(1.9, 1 + t.amount / 6000);                 // gros tip = gros plan
     const f = document.createElement("div"); f.className = "float";
     const ava = t.picture || dicebear(t.pubkey || t.name);
-    f.innerHTML = `<img src="${esc(ava)}" onerror="this.src='${dicebear(t.name)}'" /><div class="amt">+${fmt(t.amount)} <span class="s">⚡</span></div><div class="who">${esc(t.name || "anon")}</div>${t.comment ? `<div class="cmt">“${esc(t.comment)}”</div>` : ""}`;
+    f.innerHTML = `<img src="${esc(ava)}" onerror="this.src='${dicebear(t.name)}'" /><div class="amt" style="font-size:${Math.round(40 * big)}px">+${fmt(t.amount)} <span class="s">⚡</span></div><div class="who">${esc(t.name || "anon")}</div>${t.comment ? `<div class="cmt">“${esc(t.comment)}”</div>` : ""}`;
     document.body.appendChild(f); setTimeout(() => f.remove(), 2400);
   }
   /* ---- viewer WebRTC : reçoit le flux P2P du créateur en direct ; sinon HLS/démo ---- */
@@ -192,7 +229,8 @@
   ws.onopen = () => joinLive();
   ws.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
-    if (m.type === "tip") floatTip({ amount: Number(m.amount), name: m.name, picture: m.picture, comment: m.comment, pubkey: m.pubkey });
+    if (m.type === "tip") floatTip({ amount: Number(m.amount), pot: m.pot, name: m.name, picture: m.picture, comment: m.comment, pubkey: m.pubkey });
+    else if (m.type === "pot") { total = Number(m.pot) || 0; animate(); pulseCount(); }
     else if (m.type === "offer" || m.type === "ice" || m.type === "live-started" || m.type === "live-ended" || m.type === "no-live") onSignal(m);
   };
 </script>

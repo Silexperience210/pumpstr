@@ -206,18 +206,21 @@ console.log(`         npub    : ${creatorNpub}`);
 
 // ---------- WebSocket : pousse les tips ----------
 const clients = new Set<WebSocket>();
+let livePot = 0; // cagnotte du live courant (sats) : reset au go-live, diffusée avec chaque tip
 function broadcast(msg: object) {
   const s = JSON.stringify(msg);
   for (const c of clients) if (c.readyState === 1) c.send(s);
 }
 
 // Signaling WebRTC (go-live P2P) : relaie offer/answer/ICE entre le créateur et les viewers.
-const sig = createSignaling((msg) => broadcast(msg));
+// onGoLive : la cagnotte du live repart de zéro et on prévient tous les viewers.
+const sig = createSignaling((msg) => broadcast(msg), { onGoLive: () => { livePot = 0; broadcast({ type: "pot", pot: 0 }); } });
 function registerTip(amount: number, t: Tipper) {
   if (!Number.isFinite(amount) || amount <= 0) return;
   const at = Date.now();
+  livePot += amount;
   db.addTip({ amount, name: t.name, picture: t.picture, pubkey: t.pubkey, comment: t.comment, via: t.via, createdAt: at });
-  broadcast({ type: "tip", amount, at, name: t.name, pubkey: t.pubkey, picture: t.picture, comment: t.comment, via: t.via });
+  broadcast({ type: "tip", amount, at, name: t.name, pubkey: t.pubkey, picture: t.picture, comment: t.comment, via: t.via, pot: livePot });
   console.log(`[tip] +${amount} sats — ${t.name} (${t.via})${t.comment ? ` : "${t.comment}"` : ""}`);
 }
 
