@@ -83,6 +83,10 @@
     .feed .ava{ width:30px; height:30px; border-radius:50%; background:var(--ink-2); border:1px solid var(--line); flex:0 0 30px; }
     .feed .rw.fresh{ animation:flashIn .8s var(--ease); }
     @keyframes flashIn{ 0%{ background:rgba(188,255,46,.12) } 100%{ background:transparent } }
+    .tiprw{ flex:0 0 auto; background:rgba(188,255,46,.1); border:1px solid var(--line); color:var(--lime); border-radius:8px;
+      width:32px; height:32px; cursor:pointer; font-size:14px; transition:.15s var(--ease); }
+    .tiprw:hover{ background:var(--lime); color:#06200a; transform:scale(1.08); }
+    .compose.flash{ box-shadow:0 0 0 2px var(--lime), 0 0 30px -6px rgba(188,255,46,.5) !important; }
     .empty{ color:var(--txt-faint); font-size:12px; padding:18px 0; text-align:center; }
 
     /* modal (fund) */
@@ -304,16 +308,30 @@
 
     function feedRow(t, fresh) {
       const ava = t.picture || dicebear(t.pubkey || t.name);
+      let npubShort = ""; if (t.pubkey) { try { npubShort = nip19.npubEncode(t.pubkey).slice(0, 12) + "…"; } catch { /* pubkey non encodable */ } }
       const row = document.createElement("div");
       row.className = "rw" + (fresh ? " fresh" : "");
       row.innerHTML =
         `<img class="ava" src="${esc(ava)}" onerror="this.src='${dicebear(t.name)}'" />
          <div class="meta">
            <div class="m1">${esc(t.name || "anon")}${t.comment ? ` <span class="ps-faint">— “${esc(t.comment)}”</span>` : ""}</div>
-           <div class="m2">${esc(t.via || "")}</div>
+           <div class="m2">${esc(t.via || "")}${npubShort ? ` · ${esc(npubShort)}` : ""}</div>
          </div>
-         <div class="amt-b">+${fmt(t.amount)}</div>`;
+         <div class="amt-b">+${fmt(t.amount)}</div>
+         ${npubShort ? `<button class="tiprw" title="Récompenser ce tippeur">🎁</button>` : ""}`;
+      if (npubShort) row.querySelector(".tiprw").addEventListener("click", () => rewardTipper(t.pubkey, t.name));
       return row;
+    }
+
+    // Boucle produit : tip -> reward. Pré-remplit le composer avec le npub du tippeur.
+    function rewardTipper(pk, name) {
+      let npub; try { npub = nip19.npubEncode(pk); } catch { toast("npub du tippeur invalide", true); return; }
+      $("#to").value = npub;
+      if (!$("#reason").value.trim()) $("#reason").value = `Merci ${name || "à toi"} 🔥`;
+      const c = document.querySelector(".compose");
+      c.scrollIntoView({ behavior: "smooth", block: "center" });
+      c.classList.add("flash"); setTimeout(() => c.classList.remove("flash"), 1300);
+      toast(`🎁 ${name || "tippeur"} chargé — choisis le montant & envoie`);
     }
     function renderFeed(tips) {
       const box = $("#feed");
