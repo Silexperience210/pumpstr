@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Pumpstr · studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="/pumpstr.css" />
+  <style>
+    .wrap{ max-width:920px; margin:0 auto; padding:clamp(18px,4vw,34px) clamp(14px,4vw,24px) 80px; }
+    .bar{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+    .logo{ font-family:var(--display); font-weight:800; font-size:clamp(22px,4vw,30px); letter-spacing:-.03em; }
+    .logo b{ color:var(--lime); text-shadow:0 0 24px rgba(188,255,46,.45); }
+    .logo .k{ color:var(--txt-faint); font-weight:500; font-size:.6em; letter-spacing:.3em; text-transform:uppercase; margin-left:8px; }
+    .bar .right{ margin-left:auto; display:flex; gap:10px; align-items:center; }
+    a.back{ font-family:var(--mono); font-size:12px; color:var(--txt-dim); text-decoration:none; }
+    a.back:hover{ color:var(--lime); }
+
+    .insecure{ display:none; margin-bottom:16px; padding:13px 16px; border-radius:var(--r-sm); font-size:12.5px; line-height:1.5;
+      background:rgba(255,177,59,.08); border:1px solid rgba(255,177,59,.35); color:#ffd79a; }
+    .insecure.show{ display:block; } .insecure b{ color:var(--amber); }
+    .insecure code{ background:rgba(0,0,0,.4); padding:1px 6px; border-radius:5px; color:var(--lime-soft); font-size:11px; }
+
+    .stage{ position:relative; aspect-ratio:16/9; background:linear-gradient(135deg,#0d150c,#070a08); border-radius:var(--r);
+      overflow:hidden; border:1px solid var(--line-2); box-shadow:0 36px 70px -46px #000; }
+    #preview{ width:100%; height:100%; object-fit:cover; background:#000; transform:scaleX(1); }
+    #preview.mirror{ transform:scaleX(-1); }
+    .stage .idle{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:var(--txt-faint); }
+    .stage .idle .big{ font-size:46px; opacity:.5; }
+    .recdot{ position:absolute; top:14px; left:14px; display:none; align-items:center; gap:8px; font-family:var(--mono); font-weight:700; font-size:12px;
+      background:rgba(0,0,0,.55); padding:6px 12px; border-radius:99px; color:#fff; }
+    .recdot.on{ display:flex; }
+    .recdot i{ width:9px; height:9px; border-radius:50%; background:var(--magenta); box-shadow:0 0 12px var(--magenta); animation:psBlink 1s infinite; }
+    .lvl{ position:absolute; left:14px; right:14px; bottom:14px; height:7px; border-radius:99px; background:rgba(255,255,255,.1); overflow:hidden; box-shadow:inset 0 0 0 1px var(--line-2); }
+    .lvl>i{ display:block; height:100%; width:0%; border-radius:99px; background:linear-gradient(90deg,var(--lime-deep),var(--lime),var(--amber)); transition:width .08s linear; }
+
+    .panel{ margin-top:18px; padding:18px; }
+    .row{ display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+    .field{ flex:1; min-width:200px; }
+    .field label{ display:block; font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--txt-faint); margin-bottom:6px; }
+    select.ps-input{ appearance:none; cursor:pointer; }
+    .btns{ display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+    .ps-btn--rec{ background:var(--magenta); color:#fff; } .ps-btn--rec:hover{ filter:brightness(1.08); box-shadow:0 10px 30px -10px rgba(255,46,147,.6); }
+    .timer{ font-family:var(--mono); font-weight:800; font-variant-numeric:tabular-nums; color:var(--magenta); align-self:center; font-size:15px; }
+    .status{ min-height:18px; font-size:12px; margin-top:12px; }
+    .status.err{ color:var(--magenta); } .status.ok{ color:var(--lime); } .status.run{ color:var(--lime-soft); }
+
+    .clip{ margin-top:18px; padding:18px; display:none; }
+    .clip.show{ display:block; animation:psRise .5s var(--ease); }
+    .clip h3{ font-family:var(--display); font-weight:780; font-size:18px; margin:0 0 12px; }
+    .clip video{ width:100%; border-radius:var(--r-sm); background:#000; max-height:300px; }
+    .clip .actions{ display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
+    .hint{ font-size:11px; color:var(--txt-faint); margin-top:14px; line-height:1.5; }
+  </style>
+</head>
+<body>
+  <div class="ps-bg"></div>
+  <div class="ps-grain"></div>
+
+  <main class="wrap">
+    <div class="bar ps-rise">
+      <div class="logo">⚡<b>PUMPSTR</b><span class="k">studio</span></div>
+      <div class="right">
+        <span class="ps-pill" id="secPill">caméra & micro</span>
+        <a class="back" href="/dashboard.html">← console</a>
+      </div>
+    </div>
+
+    <div class="insecure" id="insecure">
+      ⚠️ <b>Caméra/micro bloqués</b> : le navigateur les interdit hors HTTPS (tu es en <code id="origin"></code>).
+      Ça marchera <b>en localhost</b> (sur le PC) et <b>une fois déployé en HTTPS</b>. Pour tester sur ce tel sans déployer :
+      Chrome → <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code> → ajoute ton origine → relance.
+    </div>
+
+    <div class="stage ps-rise" style="animation-delay:.05s">
+      <video id="preview" playsinline autoplay muted></video>
+      <div class="idle" id="idle"><div class="big">🎥</div><div>caméra éteinte</div></div>
+      <div class="recdot" id="recdot"><i></i><span id="recLabel">REC</span></div>
+      <div class="lvl"><i id="lvlbar"></i></div>
+    </div>
+
+    <section class="panel ps-card ps-rise" style="animation-delay:.1s">
+      <div class="row">
+        <div class="field">
+          <label>🎥 Caméra</label>
+          <select id="camSel" class="ps-input"><option value="">caméra par défaut</option></select>
+        </div>
+        <div class="field">
+          <label>🎙️ Micro</label>
+          <select id="micSel" class="ps-input"><option value="">micro par défaut</option></select>
+        </div>
+      </div>
+      <div class="btns">
+        <button class="ps-btn ps-btn--pump" id="startBtn">▶ Démarrer</button>
+        <button class="ps-btn ps-btn--ghost" id="flipBtn" disabled>🔄 Miroir</button>
+        <button class="ps-btn ps-btn--rec" id="recBtn" disabled>● Rec</button>
+        <span class="timer" id="timer" style="display:none">00:00</span>
+        <button class="ps-btn ps-btn--ghost" id="stopBtn" disabled style="margin-left:auto">■ Arrêter</button>
+      </div>
+      <div class="status" id="status"></div>
+    </section>
+
+    <section class="clip ps-card ps-card--glow" id="clipBox">
+      <h3>🎬 Clip enregistré</h3>
+      <video id="clipVid" controls playsinline></video>
+      <div class="actions">
+        <a class="ps-btn ps-btn--pump" id="dlBtn" download>⬇ Télécharger</a>
+        <button class="ps-btn ps-btn--ghost" id="clipClose">Fermer</button>
+        <span class="hint" id="clipMeta" style="align-self:center;margin:0"></span>
+      </div>
+    </section>
+
+    <div class="hint">
+      Capture 100% locale (rien n'est envoyé) — le clip reste sur ton appareil jusqu'à ce que tu le partages.
+      Le « go live » vers les viewers (ingest WebRTC/RTMP) viendra avec le déploiement.
+    </div>
+  </main>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const preview = $("#preview"), idle = $("#idle");
+    const camSel = $("#camSel"), micSel = $("#micSel");
+    const startBtn = $("#startBtn"), stopBtn = $("#stopBtn"), recBtn = $("#recBtn"), flipBtn = $("#flipBtn");
+    const statusEl = $("#status");
+    let stream = null, audioCtx = null, meterRAF = null, recorder = null, chunks = [], recStart = 0, timerInt = null, clipUrl = null;
+
+    const secure = window.isSecureContext || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    if (!secure) {
+      $("#insecure").classList.add("show");
+      $("#origin").textContent = location.origin;
+      $("#secPill").textContent = "⚠️ HTTPS requis";
+      $("#secPill").style.color = "var(--amber)";
+    }
+    const setStatus = (msg, cls = "") => { statusEl.className = "status " + cls; statusEl.textContent = msg; };
+
+    function gumError(e) {
+      const n = e?.name || "";
+      if (!secure || n === "NotAllowedError" && !secure) return "Caméra/micro bloqués hors HTTPS — voir l'encart ci-dessus.";
+      if (n === "NotAllowedError") return "Permission refusée. Autorise la caméra & le micro dans le navigateur.";
+      if (n === "NotFoundError" || n === "OverconstrainedError") return "Aucun périphérique trouvé pour ce choix.";
+      if (n === "NotReadableError") return "Périphérique déjà utilisé par une autre app.";
+      return "Erreur caméra : " + (e?.message || n || e);
+    }
+
+    async function listDevices() {
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        const fill = (sel, kind, label) => {
+          const cur = sel.value;
+          const items = devs.filter((d) => d.kind === kind);
+          sel.innerHTML = `<option value="">${label}</option>` +
+            items.map((d, i) => `<option value="${d.deviceId}">${(d.label || `${label.split(" ")[1]} ${i + 1}`).replace(/</g, "")}</option>`).join("");
+          if (cur && items.some((d) => d.deviceId === cur)) sel.value = cur;
+        };
+        fill(camSel, "videoinput", "caméra par défaut");
+        fill(micSel, "audioinput", "micro par défaut");
+      } catch { /* énumération impossible avant permission */ }
+    }
+
+    function startMeter(s) {
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const src = audioCtx.createMediaStreamSource(s);
+        const an = audioCtx.createAnalyser(); an.fftSize = 256; src.connect(an);
+        const data = new Uint8Array(an.frequencyBinCount), bar = $("#lvlbar");
+        const loop = () => { an.getByteFrequencyData(data); let sum = 0; for (const v of data) sum += v;
+          bar.style.width = Math.min(100, (sum / data.length / 130) * 100) + "%"; meterRAF = requestAnimationFrame(loop); };
+        loop();
+      } catch { /* pas d'audio */ }
+    }
+    function stopMeter() { if (meterRAF) cancelAnimationFrame(meterRAF), meterRAF = null; if (audioCtx) audioCtx.close().catch(() => {}); audioCtx = null; $("#lvlbar").style.width = "0%"; }
+
+    async function start() {
+      if (!navigator.mediaDevices?.getUserMedia) return setStatus("getUserMedia non supporté par ce navigateur.", "err");
+      setStatus("ouverture caméra & micro…", "run");
+      stopStream();
+      const video = camSel.value ? { deviceId: { exact: camSel.value } } : { facingMode: "user" };
+      const audio = micSel.value ? { deviceId: { exact: micSel.value } } : true;
+      try { stream = await navigator.mediaDevices.getUserMedia({ video, audio }); }
+      catch (e) { setStatus(gumError(e), "err"); return; }
+      preview.srcObject = stream; idle.style.display = "none";
+      await preview.play().catch(() => {});
+      await listDevices();           // labels dispos seulement après permission
+      startMeter(stream);
+      stopBtn.disabled = recBtn.disabled = flipBtn.disabled = false;
+      startBtn.textContent = "↻ Redémarrer";
+      const cam = stream.getVideoTracks()[0]?.label || "caméra";
+      const mic = stream.getAudioTracks()[0]?.label || "micro";
+      setStatus(`en direct (local) · ${cam} · ${mic}`, "ok");
+    }
+
+    function stopStream() {
+      if (recorder && recorder.state !== "inactive") stopRec();
+      stopMeter();
+      if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+      preview.srcObject = null; idle.style.display = "";
+      stopBtn.disabled = recBtn.disabled = flipBtn.disabled = true;
+    }
+
+    function pickMime() {
+      const c = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
+      return c.find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
+    }
+    function fmtDur(ms) { const s = Math.floor(ms / 1000); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
+
+    function startRec() {
+      if (!stream) return;
+      const mime = pickMime();
+      try { recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); }
+      catch (e) { setStatus("enregistrement non supporté : " + e.message, "err"); return; }
+      chunks = [];
+      recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
+        if (clipUrl) URL.revokeObjectURL(clipUrl);
+        clipUrl = URL.createObjectURL(blob);
+        const ext = (recorder.mimeType || "webm").includes("mp4") ? "mp4" : "webm";
+        $("#clipVid").src = clipUrl;
+        const a = $("#dlBtn"); a.href = clipUrl; a.download = `pumpstr-clip-${Date.now()}.${ext}`;
+        $("#clipMeta").textContent = `${(blob.size / 1048576).toFixed(1)} Mo · ${ext}`;
+        $("#clipBox").classList.add("show");
+        $("#clipBox").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      };
+      recorder.start();
+      recStart = Date.now();
+      $("#recdot").classList.add("on"); recBtn.textContent = "■ Stop";
+      $("#timer").style.display = ""; $("#timer").textContent = "00:00";
+      timerInt = setInterval(() => { $("#timer").textContent = fmtDur(Date.now() - recStart); $("#recLabel").textContent = "REC " + fmtDur(Date.now() - recStart); }, 250);
+      setStatus("enregistrement…", "run");
+    }
+    function stopRec() {
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+      clearInterval(timerInt); timerInt = null;
+      $("#recdot").classList.remove("on"); $("#timer").style.display = "none";
+      recBtn.textContent = "● Rec"; recBtn.disabled = !stream; setStatus("clip prêt ✓", "ok");
+    }
+
+    startBtn.addEventListener("click", start);
+    stopBtn.addEventListener("click", () => { stopStream(); setStatus("caméra arrêtée."); startBtn.textContent = "▶ Démarrer"; });
+    recBtn.addEventListener("click", () => { (recorder && recorder.state === "recording") ? stopRec() : startRec(); });
+    flipBtn.addEventListener("click", () => preview.classList.toggle("mirror"));
+    camSel.addEventListener("change", () => { if (stream) start(); });
+    micSel.addEventListener("change", () => { if (stream) start(); });
+    document.querySelector(".timer")?.addEventListener("click", stopRec);
+    $("#clipClose").addEventListener("click", () => $("#clipBox").classList.remove("show"));
+    // l'icône REC sert aussi de stop
+    $("#recdot").addEventListener("click", stopRec);
+    window.addEventListener("beforeunload", stopStream);
+  </script>
+</body>
+</html>
