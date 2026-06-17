@@ -123,6 +123,32 @@ export class PumpstrDb {
     return row.c;
   }
 
+  /** Tous les rewards émis (vue créateur/dashboard), récents d'abord. */
+  allRewards(limit = 200): RewardRow[] {
+    return this.db
+      .prepare("SELECT * FROM rewards ORDER BY createdAt DESC LIMIT ?")
+      .all(limit) as RewardRow[];
+  }
+
+  /** Agrégat rewards pour le dashboard : combien émis / réclamés / encore parqués. */
+  rewardStats(): { count: number; total: number; claimed: number; unclaimed: number; unclaimedTotal: number } {
+    const r = this.db.prepare(`
+      SELECT COUNT(*) AS count,
+             COALESCE(SUM(amount), 0) AS total,
+             COALESCE(SUM(claimed), 0) AS claimed,
+             COALESCE(SUM(CASE WHEN claimed = 0 THEN amount ELSE 0 END), 0) AS unclaimedTotal
+      FROM rewards
+    `).get() as { count: number; total: number; claimed: number; unclaimedTotal: number };
+    return { ...r, unclaimed: r.count - r.claimed };
+  }
+
+  /** Agrégat tips pour le dashboard. */
+  tipStats(): { count: number; total: number } {
+    return this.db
+      .prepare("SELECT COUNT(*) AS count, COALESCE(SUM(amount), 0) AS total FROM tips")
+      .get() as { count: number; total: number };
+  }
+
   close() {
     this.db.close();
   }

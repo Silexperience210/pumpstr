@@ -86,6 +86,15 @@ export function createHandler(deps: HandlerDeps) {
   const { rail, config, db, state, helpers, fs } = deps;
   const limiter = new RateLimiter();
 
+  /** Gate admin : si ADMIN_TOKEN est défini, exige l'en-tête. Renvoie false (+401) si refusé. */
+  const requireAdmin = (req: any, res: any): boolean => {
+    if (config.adminToken && req.headers["x-admin-token"] !== config.adminToken) {
+      sendJson(res, 401, { error: "x-admin-token requis" });
+      return false;
+    }
+    return true;
+  };
+
   return async (req: any, res: any) => {
     const url = parseUrl(req, config.port);
 
@@ -96,6 +105,61 @@ export function createHandler(deps: HandlerDeps) {
         lnAddress: `${config.lnAddressUser}@${config.lnAddressBase.replace(/^https?:\/\//, "")}`,
         recentTips: db.recentTips(),
       });
+    }
+
+    // Console créateur : tout ce qu'il faut pour piloter le node en un seul appel (admin).
+    if (url.pathname === "/api/dashboard") {
+      if (!requireAdmin(req, res)) return;
+      let balance: number | null = null;
+      try { balance = Number(await rail.getBalance()); } catch { /* réseau wallet indispo -> null */ }
+      const tips = db.tipStats();
+      const rewards = db.rewardStats();
+      return sendJson(res, 200, {
+        creator: {
+          address: config.creatorAddress,
+          npub: config.creatorNpub,
+          lnAddress: `${config.lnAddressUser}@${config.lnAddressBase.replace(/^https?:\/\//, "")}`,
+        },
+        balance,
+        splitBps: config.platformSplitBps,
+        tips: { ...tips, recent: db.recentTips(12) },
+        rewards: {
+          ...rewards,
+          list: db.allRewards(60).map((r) => ({
+            id: r.id, npub: r.npub, amount: r.amount, reason: r.reason,
+            ref: r.ref, createdAt: r.createdAt, claimed: r.claimed,
+          })),
+        },
+      });
+    }
+
+    // Recharger le wallet du node en Lightning (admin) : facture LN-in -> VTXO.
+    // Pas de side-effect "tip" : on dédupe le txid pour que la subscription ne le recompte pas.
+    if (url.pathname === "/api/fund" && req.method === "POST") {
+      if (!requireAdmin(req, res)) return;
+      const rl = limiter.check(rateLimitKey(req, "fund"), { limit: 20, windowMs: 60_000 });
+      if (rl.limited) return sendJson(res, 429, { error: `rate limit — retry after ${rl.retryAfter}s` });
+
+      const body = parseJson(await readBody(req));
+      let amount: bigint;
+      try {
+        amount = parseSats(body.amount, { min: 1000n, max: 100_000_000_000n });
+      } catch (e: any) {
+        return sendJson(res, 400, { error: e?.message ?? "montant invalide" });
+      }
+      try {
+        if (!rail.createLnInvoiceWithSettle) throw new Error("rail.createLnInvoiceWithSettle non disponible");
+        const { bolt11, settle } = await rail.createLnInvoiceWithSettle(amount, "Recharge wallet Pumpstr");
+        settle()
+          .then((r) => {
+            if (r?.txid) state.claimedTxids.add(r.txid); // pas un tip : suppression du double-compte
+            console.log(`[fund] +${Number(amount)} sats encaissés${r?.txid ? ` (${r.txid})` : ""}`);
+          })
+          .catch((e: any) => console.error("[fund] settle:", e?.message ?? e));
+        return sendJson(res, 200, { bolt11, amount: Number(amount) });
+      } catch (e: any) {
+        return sendJson(res, 502, { error: e?.message ?? String(e) });
+      }
     }
 
     // LUD-16 Lightning Address
@@ -179,9 +243,7 @@ export function createHandler(deps: HandlerDeps) {
       const rl = limiter.check(rateLimitKey(req, "reward"), { limit: 30, windowMs: 60_000 });
       if (rl.limited) return sendJson(res, 429, { error: `rate limit — retry after ${rl.retryAfter}s` });
 
-      if (config.adminToken && req.headers["x-admin-token"] !== config.adminToken) {
-        return sendJson(res, 401, { error: "x-admin-token requis" });
-      }
+      if (!requireAdmin(req, res)) return;
       const body = parseJson(await readBody(req));
       let pubkey: string;
       let amount: bigint;
@@ -214,9 +276,7 @@ export function createHandler(deps: HandlerDeps) {
 
     // Refund admin d'un escrow expiré
     if (url.pathname === "/api/reward/refund" && req.method === "POST") {
-      if (config.adminToken && req.headers["x-admin-token"] !== config.adminToken) {
-        return sendJson(res, 401, { error: "x-admin-token requis" });
-      }
+      if (!requireAdmin(req, res)) return;
       const body = parseJson(await readBody(req));
       const reward = db.getRewardById(body.id);
       if (!reward) return sendJson(res, 404, { error: "reward inconnu" });

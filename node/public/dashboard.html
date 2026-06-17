@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Pumpstr · console créateur</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="/pumpstr.css" />
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <style>
+    .wrap{ max-width:1080px; margin:0 auto; padding:clamp(20px,4vw,40px) clamp(14px,4vw,26px) 100px; }
+
+    /* header */
+    .bar{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:26px; }
+    .logo{ font-family:var(--display); font-weight:800; font-size:clamp(22px,4vw,30px); letter-spacing:-.03em; }
+    .logo b{ color:var(--lime); text-shadow:0 0 24px rgba(188,255,46,.45); }
+    .logo .k{ color:var(--txt-faint); font-weight:500; font-size:.6em; letter-spacing:.3em; text-transform:uppercase; margin-left:8px; }
+    .bar .right{ margin-left:auto; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .who{ font-family:var(--mono); font-size:12px; color:var(--txt-dim); cursor:pointer; }
+    .who:hover{ color:var(--lime); }
+
+    /* balance hero */
+    .hero{ padding:clamp(22px,4vw,34px); margin-bottom:18px; overflow:hidden; }
+    .hero .lbl{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .balrow{ display:flex; align-items:flex-end; gap:18px; flex-wrap:wrap; margin-top:6px; }
+    .bal{ font-size:clamp(46px,12vw,92px); line-height:.9; }
+    .bal .u{ font-size:.22em; }
+    .bal.off{ color:var(--txt-faint); text-shadow:none; }
+    .addrs{ display:flex; gap:8px; flex-wrap:wrap; margin-top:18px; }
+    .chip{ font-family:var(--mono); font-size:11px; color:var(--txt-dim); background:rgba(0,0,0,.34); border:1px solid var(--line-2);
+      border-radius:var(--r-pill); padding:7px 13px; cursor:pointer; transition:.18s var(--ease); max-width:100%; }
+    .chip:hover{ border-color:var(--lime); color:var(--lime); }
+    .chip b{ color:var(--txt); font-weight:500; }
+
+    /* stats */
+    .stats{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:18px; }
+    @media(max-width:680px){ .stats{ grid-template-columns:1fr; } }
+    .stat{ padding:18px 20px; }
+    .stat .t{ font-family:var(--mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--txt-faint); }
+    .stat .v{ font-family:var(--mono); font-weight:800; font-variant-numeric:tabular-nums; font-size:30px; letter-spacing:-.03em; margin-top:8px; }
+    .stat .v.lime{ color:var(--lime); } .stat .v.mag{ color:var(--magenta); }
+    .stat .s{ font-size:12px; color:var(--txt-dim); margin-top:3px; }
+
+    /* composer */
+    .compose{ padding:clamp(20px,4vw,28px); margin-bottom:18px; border-color:rgba(188,255,46,.32); }
+    .compose h2{ font-family:var(--display); font-weight:780; font-size:20px; letter-spacing:-.02em; margin:0 0 4px; }
+    .compose .sub{ font-size:12px; color:var(--txt-dim); margin-bottom:16px; }
+    .amts{ display:flex; gap:9px; flex-wrap:wrap; margin:12px 0; }
+    .amt{ padding:11px 16px; border-radius:var(--r-sm); cursor:pointer; font-family:var(--mono); font-weight:800; font-size:15px;
+      background:rgba(255,255,255,.03); border:1px solid var(--line-2); color:var(--txt); transition:.16s var(--ease); }
+    .amt:hover{ border-color:var(--line); } .amt small{ font-weight:500; color:var(--txt-faint); font-size:10px; margin-left:3px; }
+    .amt.sel{ background:rgba(188,255,46,.12); border-color:var(--lime); color:var(--lime); box-shadow:0 0 20px -6px rgba(188,255,46,.5); }
+    .amt.custom{ display:flex; align-items:center; gap:0; padding:0; overflow:hidden; }
+    .amt.custom input{ width:120px; background:transparent; border:0; color:var(--txt); font-family:var(--mono); font-weight:800; font-size:15px; padding:11px 14px; }
+    .amt.custom input:focus{ outline:none; }
+    .send-row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+    .send-row .ps-input{ flex:1; min-width:200px; }
+    .sstatus{ min-height:18px; font-size:12px; margin-top:12px; }
+    .sstatus.ok{ color:var(--lime); } .sstatus.err{ color:var(--magenta); }
+    .sstatus.run{ color:var(--lime-soft); } .sstatus.run::before{ content:"⟳ "; display:inline-block; animation:spin 1s linear infinite; }
+    @keyframes spin{ to{ transform:rotate(360deg) } }
+
+    /* two columns */
+    .cols{ display:grid; grid-template-columns:1.2fr 1fr; gap:18px; }
+    @media(max-width:840px){ .cols{ grid-template-columns:1fr; } }
+    .panel{ padding:20px; }
+    .panel h3{ font-family:var(--mono); font-size:12px; font-weight:700; letter-spacing:.18em; text-transform:uppercase;
+      color:var(--txt-faint); margin:0 0 14px; display:flex; align-items:center; justify-content:space-between; }
+    .panel h3 .n{ color:var(--lime); }
+
+    .rw{ display:flex; align-items:center; gap:12px; padding:13px 0; border-top:1px solid var(--line-2); }
+    .rw:first-of-type{ border-top:0; }
+    .rw .amt-b{ font-family:var(--mono); font-weight:800; font-size:18px; color:var(--lime); min-width:78px; }
+    .rw .meta{ flex:1; min-width:0; }
+    .rw .meta .m1{ font-family:var(--display); font-size:14px; color:var(--txt); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .rw .meta .m2{ font-family:var(--mono); font-size:11px; color:var(--txt-faint); }
+    .tag{ font-family:var(--mono); font-size:10px; font-weight:700; letter-spacing:.06em; padding:4px 9px; border-radius:99px; white-space:nowrap; }
+    .tag.claimed{ background:rgba(188,255,46,.14); color:var(--lime); }
+    .tag.pending{ background:rgba(255,177,59,.14); color:var(--amber); cursor:pointer; border:1px solid transparent; }
+    .tag.pending:hover{ border-color:var(--amber); }
+
+    .feed .rw .amt-b{ color:var(--lime); }
+    .feed .ava{ width:30px; height:30px; border-radius:50%; background:var(--ink-2); border:1px solid var(--line); flex:0 0 30px; }
+    .feed .rw.fresh{ animation:flashIn .8s var(--ease); }
+    @keyframes flashIn{ 0%{ background:rgba(188,255,46,.12) } 100%{ background:transparent } }
+    .empty{ color:var(--txt-faint); font-size:12px; padding:18px 0; text-align:center; }
+
+    /* modal (fund) */
+    .modal{ position:fixed; inset:0; background:rgba(7,10,8,.84); backdrop-filter:blur(7px); display:none; align-items:center; justify-content:center; z-index:20; padding:18px; }
+    .modal.show{ display:flex; }
+    .modal .box{ width:min(360px,94vw); padding:24px; text-align:center; }
+    .modal h3{ font-family:var(--display); font-weight:780; font-size:20px; margin:0 0 4px; }
+    .modal .hint{ font-size:12px; color:var(--txt-dim); margin-bottom:16px; }
+    .modal canvas{ background:#fff; border-radius:12px; padding:11px; box-shadow:0 0 50px -10px rgba(188,255,46,.5); }
+    .modal .inv{ font-family:var(--mono); font-size:10px; word-break:break-all; color:var(--txt-dim); background:rgba(0,0,0,.4);
+      border:1px solid var(--line-2); padding:11px; border-radius:10px; max-height:84px; overflow:auto; margin-top:14px; text-align:left; }
+
+    /* gate */
+    .gate{ position:fixed; inset:0; background:rgba(7,10,8,.92); backdrop-filter:blur(8px); display:none; align-items:center; justify-content:center; z-index:30; padding:18px; }
+    .gate.show{ display:flex; }
+    .gate .box{ width:min(380px,94vw); padding:26px; text-align:center; }
+
+    .toast{ position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(90px);
+      background:var(--lime); color:#06200a; font-family:var(--mono); font-weight:800; padding:14px 22px; border-radius:var(--r-sm);
+      box-shadow:0 14px 44px -8px rgba(188,255,46,.6); transition:transform .4s var(--spring); z-index:40; max-width:90vw; }
+    .toast.show{ transform:translateX(-50%) translateY(0); }
+    .toast.err{ background:var(--magenta); color:#fff; }
+  </style>
+</head>
+<body>
+  <div class="ps-bg"></div>
+  <div class="ps-grain"></div>
+
+  <main class="wrap">
+    <div class="bar ps-rise">
+      <div class="logo">⚡<b>PUMPSTR</b><span class="k">console</span></div>
+      <div class="right">
+        <span class="ps-pill ps-pill--live" id="livePill">node en ligne</span>
+        <span class="who" id="who" title="copier le npub">npub…</span>
+      </div>
+    </div>
+
+    <!-- SOLDE -->
+    <section class="hero ps-card ps-card--glow ps-rise" style="animation-delay:.05s">
+      <div class="lbl">
+        <span class="ps-kicker">Solde du coffre</span>
+        <button class="ps-btn ps-btn--pump" id="fundBtn">⚡ Recharger</button>
+      </div>
+      <div class="balrow">
+        <span class="ps-sats ps-pulse bal" id="bal"><span data-n>0</span><span class="u"> sats</span></span>
+      </div>
+      <div class="addrs">
+        <span class="chip" id="addrChip" title="adresse Arkade (copier)">⚓ <b>chargement…</b></span>
+        <span class="chip" id="lnChip" title="Lightning Address (copier)">⚡ <b>—</b></span>
+        <span class="chip" id="splitChip" style="cursor:default">split plateforme · <b>0%</b></span>
+      </div>
+    </section>
+
+    <!-- STATS -->
+    <section class="stats">
+      <div class="stat ps-card ps-rise" style="animation-delay:.1s">
+        <div class="t">⚡ Tips reçus</div>
+        <div class="v lime"><span data-n id="tipTotal">0</span></div>
+        <div class="s"><span id="tipCount">0</span> tips · ce node</div>
+      </div>
+      <div class="stat ps-card ps-rise" style="animation-delay:.14s">
+        <div class="t">🎁 Rewards émis</div>
+        <div class="v"><span data-n id="rwTotal">0</span></div>
+        <div class="s"><span id="rwCount">0</span> bons au porteur</div>
+      </div>
+      <div class="stat ps-card ps-rise" style="animation-delay:.18s">
+        <div class="t">⏳ Encore parqué</div>
+        <div class="v mag"><span data-n id="rwUnclaimed">0</span></div>
+        <div class="s"><span id="rwUnclaimedN">0</span> non réclamés</div>
+      </div>
+    </section>
+
+    <!-- COMPOSER -->
+    <section class="compose ps-card ps-rise" style="animation-delay:.22s">
+      <h2>Émettre un bon 🎁</h2>
+      <div class="sub">Des sats parqués en escrow Arkade pour un npub. Lui seul les réclame (self-custody). Fini le <code>curl</code>.</div>
+      <input id="to" class="ps-input" placeholder="npub1…  (destinataire) — ou clé publique hex" autocomplete="off" spellcheck="false" />
+      <div class="amts" id="amts">
+        <div class="amt sel" data-v="210">210<small>sats</small></div>
+        <div class="amt" data-v="2100">2 100<small>sats</small></div>
+        <div class="amt" data-v="21000">21 000<small>sats</small></div>
+        <div class="amt custom"><input id="amtCustom" type="number" min="330" placeholder="montant…" /></div>
+      </div>
+      <div class="send-row">
+        <input id="reason" class="ps-input" placeholder="raison (optionnel) — ex : meilleur clip du live" maxlength="140" />
+        <button id="send" class="ps-btn ps-btn--pump">🎁 Envoyer le reward</button>
+      </div>
+      <div class="sstatus" id="sstatus"></div>
+    </section>
+
+    <!-- LEDGERS -->
+    <div class="cols">
+      <section class="panel ps-card ps-rise" style="animation-delay:.26s">
+        <h3>Bons émis <span class="n" id="rwListN">0</span></h3>
+        <div id="rwList"><div class="empty">Aucun bon émis. Récompense quelqu'un ci-dessus 🔥</div></div>
+      </section>
+      <section class="panel ps-card feed ps-rise" style="animation-delay:.3s">
+        <h3>Tips en direct <span class="ps-pill ps-pill--live" style="font-size:9px;padding:4px 9px">live</span></h3>
+        <div id="feed"><div class="empty">En attente du premier tip…</div></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- modal recharge -->
+  <div class="modal" id="fundModal"><div class="box ps-card ps-card--glow">
+    <h3>Recharger le coffre</h3>
+    <div class="hint">Paie cette facture depuis n'importe quel wallet LN — ou colle-la sur <b>faucet.mutinynet.com</b>. Les sats arrivent en VTXO.</div>
+    <canvas id="fundQr" width="220" height="220"></canvas>
+    <div class="inv" id="fundInv">génération…</div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="ps-btn ps-btn--ghost" id="fundCopy" style="flex:1;justify-content:center">Copier</button>
+      <button class="ps-btn ps-btn--mag" id="fundClose" style="flex:1;justify-content:center">Fermer</button>
+    </div>
+  </div></div>
+
+  <!-- gate admin -->
+  <div class="gate" id="gate"><div class="box ps-card ps-card--glow">
+    <div class="ps-kicker" style="margin-bottom:10px">🔒 Accès créateur</div>
+    <h3 style="font-family:var(--display);font-weight:780;font-size:22px;margin:0 0 6px">Token admin requis</h3>
+    <p class="ps-dim" style="font-size:12px;margin:0 0 16px">Ce node est protégé par <code>ADMIN_TOKEN</code>. Colle-le pour piloter la console.</p>
+    <input id="token" class="ps-input" type="password" placeholder="ADMIN_TOKEN…" autocomplete="off" />
+    <button id="unlock" class="ps-btn ps-btn--pump" style="width:100%;justify-content:center;margin-top:12px">Déverrouiller</button>
+  </div></div>
+
+  <div class="toast" id="toast"></div>
+
+  <script type="module">
+    import { nip19 } from "https://esm.sh/nostr-tools@2.7.2";
+
+    const $ = (s, r = document) => r.querySelector(s);
+    const fmt = (n) => new Intl.NumberFormat("fr-FR").format(Math.round(n || 0));
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+    const dicebear = (s) => `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(s || "anon")}`;
+    const shortKey = (k) => (k && k.length > 24 ? k.slice(0, 13) + "…" + k.slice(-6) : (k || "—"));
+
+    const ADMIN_LS = "pumpstr_admin";
+    const adminTok = () => localStorage.getItem(ADMIN_LS) || "";
+    function authHeaders(json) {
+      const h = json ? { "content-type": "application/json" } : {};
+      const t = adminTok(); if (t) h["x-admin-token"] = t;
+      return h;
+    }
+    async function api(path, opts = {}) {
+      const r = await fetch(path, { ...opts, headers: { ...authHeaders(!!opts.body), ...(opts.headers || {}) } });
+      if (r.status === 401) { $("#gate").classList.add("show"); throw new Error("admin");
+      }
+      return r;
+    }
+
+    /* ----- count-up partagé ----- */
+    function countUp(el, target) {
+      const from = Number(el.dataset.cur || 0), dur = 800, t0 = performance.now();
+      const step = (t) => { const p = Math.min(1, (t - t0) / dur);
+        el.textContent = fmt(from + (target - from) * (1 - Math.pow(1 - p, 3)));
+        if (p < 1) requestAnimationFrame(step); else el.dataset.cur = target; };
+      requestAnimationFrame(step);
+    }
+
+    /* ----- toast ----- */
+    let toastT;
+    function toast(msg, err) {
+      const el = $("#toast"); el.textContent = msg; el.className = "toast show" + (err ? " err" : "");
+      clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("show"), 2600);
+    }
+    function copy(text, label) { navigator.clipboard?.writeText(text); toast(label || "copié ✓"); }
+
+    /* ----- état local ----- */
+    let liveTipTotal = 0, liveTipCount = 0;
+
+    /* ===================== RENDER ===================== */
+    function renderRewards(list) {
+      $("#rwListN").textContent = list.length;
+      const box = $("#rwList");
+      if (!list.length) { box.innerHTML = `<div class="empty">Aucun bon émis. Récompense quelqu'un ci-dessus 🔥</div>`; return; }
+      box.innerHTML = "";
+      for (const r of list) {
+        const serial = (r.id || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(-6) || "BEARER";
+        const when = r.createdAt ? new Date(r.createdAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" }) : "—";
+        const row = document.createElement("div");
+        row.className = "rw";
+        row.innerHTML =
+          `<div class="amt-b">${fmt(r.amount)}</div>
+           <div class="meta">
+             <div class="m1">${r.reason ? esc(r.reason) : `<span class="ps-faint">bon #${serial}</span>`}</div>
+             <div class="m2">${when} · ${esc(shortKey(r.npub))}</div>
+           </div>
+           ${r.claimed
+             ? `<span class="tag claimed">✓ réclamé</span>`
+             : `<span class="tag pending" data-refund="${esc(r.id)}" title="refund (escrow expiré, vers la plateforme)">⏳ en attente</span>`}`;
+        box.appendChild(row);
+      }
+      box.querySelectorAll("[data-refund]").forEach((el) =>
+        el.addEventListener("click", () => refund(el.getAttribute("data-refund"))));
+    }
+
+    function feedRow(t, fresh) {
+      const ava = t.picture || dicebear(t.pubkey || t.name);
+      const row = document.createElement("div");
+      row.className = "rw" + (fresh ? " fresh" : "");
+      row.innerHTML =
+        `<img class="ava" src="${esc(ava)}" onerror="this.src='${dicebear(t.name)}'" />
+         <div class="meta">
+           <div class="m1">${esc(t.name || "anon")}${t.comment ? ` <span class="ps-faint">— “${esc(t.comment)}”</span>` : ""}</div>
+           <div class="m2">${esc(t.via || "")}</div>
+         </div>
+         <div class="amt-b">+${fmt(t.amount)}</div>`;
+      return row;
+    }
+    function renderFeed(tips) {
+      const box = $("#feed");
+      if (!tips.length) { box.innerHTML = `<div class="empty">En attente du premier tip…</div>`; return; }
+      box.innerHTML = "";
+      for (const t of tips) box.appendChild(feedRow(t, false));
+    }
+
+    /* ===================== DATA ===================== */
+    async function loadDashboard() {
+      let d;
+      try { d = await api("/api/dashboard").then((r) => r.json()); }
+      catch (e) { if (e.message !== "admin") toast("coffre injoignable", true); return; }
+
+      // identité
+      const npub = d.creator?.npub || "";
+      $("#who").textContent = npub ? npub.slice(0, 12) + "…" : "—";
+      $("#who").onclick = () => copy(npub, "npub copié ✓");
+      $("#addrChip").innerHTML = `⚓ <b>${esc(shortKey(d.creator?.address))}</b>`;
+      $("#addrChip").onclick = () => copy(d.creator?.address, "adresse Arkade copiée ✓");
+      $("#lnChip").innerHTML = `⚡ <b>${esc(d.creator?.lnAddress || "—")}</b>`;
+      $("#lnChip").onclick = () => copy(d.creator?.lnAddress, "Lightning Address copiée ✓");
+      $("#splitChip").innerHTML = `split plateforme · <b>${((d.splitBps || 0) / 100)}%</b>`;
+
+      // solde
+      const balEl = $("#bal"), balN = $("[data-n]", balEl);
+      if (d.balance == null) { balEl.classList.add("off"); balN.textContent = "—"; }
+      else { balEl.classList.remove("off"); countUp(balN, d.balance); }
+
+      // stats
+      liveTipTotal = d.tips?.total || 0; liveTipCount = d.tips?.count || 0;
+      countUp($("#tipTotal"), liveTipTotal); $("#tipCount").textContent = liveTipCount;
+      countUp($("#rwTotal"), d.rewards?.total || 0); $("#rwCount").textContent = d.rewards?.count || 0;
+      countUp($("#rwUnclaimed"), d.rewards?.unclaimedTotal || 0); $("#rwUnclaimedN").textContent = d.rewards?.unclaimed || 0;
+
+      renderRewards(d.rewards?.list || []);
+      renderFeed(d.tips?.recent || []);
+    }
+
+    /* ===================== ACTIONS ===================== */
+    // montant sélectionné
+    let amount = 210;
+    const amts = $("#amts"), custom = $("#amtCustom");
+    amts.addEventListener("click", (e) => {
+      const el = e.target.closest(".amt:not(.custom)"); if (!el) return;
+      amts.querySelectorAll(".amt").forEach((c) => c.classList.remove("sel"));
+      el.classList.add("sel"); amount = Number(el.dataset.v); custom.value = "";
+    });
+    custom.addEventListener("focus", () => amts.querySelectorAll(".amt").forEach((c) => c.classList.remove("sel")));
+    custom.addEventListener("input", () => {
+      amts.querySelectorAll(".amt:not(.custom)").forEach((c) => c.classList.remove("sel"));
+      const v = Number(custom.value); if (v > 0) { amount = v; custom.closest(".amt").classList.add("sel"); }
+    });
+
+    function normalizePubkey(v) {
+      v = (v || "").trim();
+      if (!v) throw new Error("destinataire requis");
+      if (/^[0-9a-f]{64}$/i.test(v)) return nip19.npubEncode(v.toLowerCase());
+      const d = nip19.decode(v); if (d.type !== "npub") throw new Error("npub attendu"); return v;
+    }
+
+    $("#send").addEventListener("click", async () => {
+      const st = $("#sstatus"), btn = $("#send");
+      let to;
+      try { to = normalizePubkey($("#to").value); } catch (e) { st.className = "sstatus err"; st.textContent = e.message; return; }
+      if (!(amount >= 330)) { st.className = "sstatus err"; st.textContent = "montant ≥ 330 sats (dust)"; return; }
+      btn.disabled = true; st.className = "sstatus run"; st.textContent = "émission de l'escrow…";
+      try {
+        const r = await api("/api/reward", {
+          method: "POST", body: JSON.stringify({ to, amount, reason: $("#reason").value.trim() }),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || "échec");
+        st.className = "sstatus ok"; st.textContent = `Bon émis ✓ · ${fmt(j.amount)} sats → ${to.slice(0, 14)}…`;
+        toast(`🎁 ${fmt(j.amount)} sats parqués`);
+        $("#to").value = ""; $("#reason").value = "";
+        loadDashboard();
+      } catch (e) {
+        if (e.message === "admin") { st.className = "sstatus"; st.textContent = ""; return; }
+        st.className = "sstatus err"; st.textContent = "Échec : " + e.message;
+      } finally { btn.disabled = false; }
+    });
+
+    async function refund(id) {
+      if (!confirm("Refund ce bon vers la plateforme ? (uniquement si l'escrow est expiré et non réclamé)")) return;
+      try {
+        const r = await api("/api/reward/refund", { method: "POST", body: JSON.stringify({ id }) });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || "échec");
+        toast("↩ refund émis"); loadDashboard();
+      } catch (e) { if (e.message !== "admin") toast("Refund : " + e.message, true); }
+    }
+
+    /* recharge */
+    const fundModal = $("#fundModal");
+    $("#fundBtn").addEventListener("click", async () => {
+      const amt = Number(prompt("Recharger de combien de sats ? (≥ 1000)", "21000"));
+      if (!amt || amt < 1000) return;
+      $("#fundInv").textContent = "génération de la facture…"; fundModal.classList.add("show");
+      try {
+        const r = await api("/api/fund", { method: "POST", body: JSON.stringify({ amount: amt }) });
+        const j = await r.json();
+        if (!r.ok || !j.bolt11) throw new Error(j.error || "pas de facture");
+        $("#fundInv").textContent = j.bolt11;
+        QRCode.toCanvas($("#fundQr"), j.bolt11.toUpperCase(), { width: 220, margin: 1 });
+        $("#fundCopy").onclick = () => copy(j.bolt11, "facture copiée ✓");
+      } catch (e) { if (e.message !== "admin") $("#fundInv").textContent = "erreur : " + e.message; }
+    });
+    $("#fundClose").addEventListener("click", () => fundModal.classList.remove("show"));
+
+    /* gate */
+    $("#unlock").addEventListener("click", () => {
+      const t = $("#token").value.trim(); if (!t) return;
+      localStorage.setItem(ADMIN_LS, t); $("#gate").classList.remove("show");
+      loadDashboard();
+    });
+    $("#token").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#unlock").click(); });
+
+    /* WS : tips en direct */
+    function connectWs() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.onmessage = (ev) => {
+        let m; try { m = JSON.parse(ev.data); } catch { return; }
+        if (m.type !== "tip") return;
+        const amt = Number(m.amount) || 0;
+        liveTipTotal += amt; liveTipCount += 1;
+        countUp($("#tipTotal"), liveTipTotal); $("#tipCount").textContent = liveTipCount;
+        if (typeof $("#bal [data-n]").dataset.cur !== "undefined" && !$("#bal").classList.contains("off"))
+          countUp($("#bal [data-n]"), Number($("#bal [data-n]").dataset.cur || 0) + amt);
+        const box = $("#feed"); if (box.querySelector(".empty")) box.innerHTML = "";
+        box.insertBefore(feedRow(m, true), box.firstChild);
+        while (box.children.length > 14) box.removeChild(box.lastChild);
+      };
+      ws.onclose = () => setTimeout(connectWs, 1800);
+    }
+
+    loadDashboard();
+    connectWs();
+  </script>
+</body>
+</html>

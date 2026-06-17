@@ -349,6 +349,7 @@ wss.on("connection", (ws) => {
 
 server.listen(PORT, () => {
   console.log(`\n  🔥 PUMPSTR node en ligne :`);
+  console.log(`     console créateur     : http://localhost:${PORT}/dashboard.html`);
   console.log(`     overlay (source OBS) : http://localhost:${PORT}/overlay.html`);
   console.log(`     page tip (viewer)    : http://localhost:${PORT}/tip.html`);
   console.log(`     portail fédéré       : http://localhost:${PORT}/portal`);
