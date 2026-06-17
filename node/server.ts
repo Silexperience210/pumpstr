@@ -352,6 +352,7 @@ const handler = createHandler({
     publishZapReceipt,
     publishRewardNote,
     tipperFromBody,
+    broadcast,
   },
   fs: { publicDir: PUBLIC, portalDir: join(HERE, "..", "portal") },
 });

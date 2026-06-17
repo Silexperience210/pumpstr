@@ -124,7 +124,10 @@
     <section class="hero ps-card ps-card--glow ps-rise" style="animation-delay:.05s">
       <div class="lbl">
         <span class="ps-kicker">Solde du coffre</span>
-        <button class="ps-btn ps-btn--pump" id="fundBtn">⚡ Recharger</button>
+        <span style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="ps-btn ps-btn--ghost" id="wdBtn">↗ Retirer</button>
+          <button class="ps-btn ps-btn--pump" id="fundBtn">⚡ Recharger</button>
+        </span>
       </div>
       <div class="balrow">
         <span class="ps-sats ps-pulse bal" id="bal"><span data-n>0</span><span class="u"> sats</span></span>
@@ -195,6 +198,18 @@
     <div style="display:flex;gap:10px;margin-top:14px">
       <button class="ps-btn ps-btn--ghost" id="fundCopy" style="flex:1;justify-content:center">Copier</button>
       <button class="ps-btn ps-btn--mag" id="fundClose" style="flex:1;justify-content:center">Fermer</button>
+    </div>
+  </div></div>
+
+  <!-- modal retrait (LN-out) -->
+  <div class="modal" id="wdModal"><div class="box ps-card ps-card--glow">
+    <h3>Retirer en Lightning</h3>
+    <div class="hint">Colle une <b>facture LN</b> (lnbc…) générée par ton wallet pour le montant voulu. Le coffre la paie (swap submarine) → les sats arrivent chez toi.</div>
+    <textarea id="wdInvoice" class="ps-input" rows="3" placeholder="lnbc…" style="resize:vertical;font-size:11px;text-align:left"></textarea>
+    <div class="sstatus" id="wdStatus" style="text-align:left"></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="ps-btn ps-btn--pump" id="wdSend" style="flex:1;justify-content:center">↗ Payer la facture</button>
+      <button class="ps-btn ps-btn--ghost" id="wdClose" style="flex:1;justify-content:center">Fermer</button>
     </div>
   </div></div>
 
@@ -401,6 +416,31 @@
     });
     $("#fundClose").addEventListener("click", () => fundModal.classList.remove("show"));
 
+    /* retrait (LN-out) */
+    const wdModal = $("#wdModal");
+    $("#wdBtn").addEventListener("click", () => {
+      $("#wdStatus").className = "sstatus"; $("#wdStatus").textContent = "";
+      wdModal.classList.add("show"); $("#wdInvoice").focus();
+    });
+    $("#wdClose").addEventListener("click", () => wdModal.classList.remove("show"));
+    $("#wdSend").addEventListener("click", async () => {
+      const st = $("#wdStatus"), btn = $("#wdSend");
+      const invoice = $("#wdInvoice").value.trim();
+      if (!/^ln(bc|tbs|tb)[0-9]/i.test(invoice)) { st.className = "sstatus err"; st.textContent = "facture lnbc… invalide"; return; }
+      btn.disabled = true; st.className = "sstatus run"; st.textContent = "paiement en cours (swap submarine, ~qq sec)…";
+      try {
+        const r = await api("/api/withdraw", { method: "POST", body: JSON.stringify({ invoice }) });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || "échec");
+        st.className = "sstatus ok"; st.textContent = `Retiré ✓ · ${fmt(j.amount)} sats`;
+        $("#wdInvoice").value = ""; loadDashboard();
+        setTimeout(() => wdModal.classList.remove("show"), 1600);
+      } catch (e) {
+        if (e.message === "admin") { st.className = "sstatus"; st.textContent = ""; return; }
+        st.className = "sstatus err"; st.textContent = "Échec : " + e.message;
+      } finally { btn.disabled = false; }
+    });
+
     /* gate */
     $("#unlock").addEventListener("click", () => {
       const t = $("#token").value.trim(); if (!t) return;
@@ -415,6 +455,17 @@
       const ws = new WebSocket(`${proto}://${location.host}/ws`);
       ws.onmessage = (ev) => {
         let m; try { m = JSON.parse(ev.data); } catch { return; }
+        if (m.type === "fund") {           // paiement de recharge reçu -> efface l'invoice
+          fundModal.classList.remove("show");
+          toast(`⚡ Rechargé +${fmt(m.amount)} sats ✓`);
+          loadDashboard();
+          return;
+        }
+        if (m.type === "withdraw") {        // retrait réglé
+          toast(`↗ Retiré ${fmt(m.amount)} sats ✓`);
+          loadDashboard();
+          return;
+        }
         if (m.type !== "tip") return;
         const amt = Number(m.amount) || 0;
         liveTipTotal += amt; liveTipCount += 1;

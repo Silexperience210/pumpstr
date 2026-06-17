@@ -209,6 +209,22 @@ export class ArkadeRail implements PaymentRail {
   }
 
   /**
+   * Withdraw LN-out (Arkade → Lightning) via **swap submarine** Boltz : paie un BOLT11
+   * depuis le wallet du node. Attend le règlement (`waitFor:"settled"` par défaut) ; Boltz
+   * auto-refund si l'échec survient avant résolution. Renvoie le montant + txid (+ preimage).
+   * Hors interface `PaymentRail` (spécifique LN) — utilisé par le node pour `/api/withdraw`.
+   */
+  async withdrawToLightning(invoice: string): Promise<{ amount: number; txid: string; preimage?: string }> {
+    const swaps = this.getSwaps();
+    const res = (await swaps.sendLightningPayment({ invoice } as any)) as any;
+    return {
+      amount: Number(res?.amount ?? 0),
+      txid: res?.txid ?? res?.transactionId ?? "",
+      preimage: res?.preimage,
+    };
+  }
+
+  /**
    * S'abonne aux **fonds entrants temps réel** (tips). Le callback reçoit `{newVtxos, spentVtxos}`
    * (off-chain) ou `{coins}` (on-chain) ; compter le net = Σnew − Σspent. Renvoie un `unsub()`.
    * Hors `PaymentRail` (orchestration spécifique Arkade) — utilisé par le host node.

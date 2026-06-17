@@ -21,6 +21,8 @@ export interface HandlerDeps {
     createLnInvoiceWithSettle?(amount: bigint, description?: string): Promise<{ bolt11: string; settle: () => Promise<{ txid: string }> }>;
     /** Extension ArkadeRail pour le refund d'un escrow expiré. */
     refund?(ref: { id: string }): Promise<{ id: string; status: string }>;
+    /** Extension ArkadeRail pour le withdraw LN-out (paie un BOLT11 depuis le wallet). */
+    withdrawToLightning?(invoice: string): Promise<{ amount: number; txid: string; preimage?: string }>;
   };
   config: {
     port: number;
@@ -44,6 +46,8 @@ export interface HandlerDeps {
     publishZapReceipt: (zapRequest: any, bolt11: string, amountSats: number) => Promise<void> | void;
     publishRewardNote: (pubkey: string, amount: number, claimUrl: string, reason: string) => Promise<void> | void;
     tipperFromBody: (body: any, via: string) => Promise<Tipper>;
+    /** Diffuse un message à tous les clients WS /ws (feedback live : fund/withdraw). */
+    broadcast?: (msg: object) => void;
   };
   fs: {
     publicDir: string;
@@ -153,12 +157,38 @@ export function createHandler(deps: HandlerDeps) {
         settle()
           .then((r) => {
             if (r?.txid) state.claimedTxids.add(r.txid); // pas un tip : suppression du double-compte
+            helpers.broadcast?.({ type: "fund", amount: Number(amount), txid: r?.txid ?? "" }); // efface l'invoice côté UI
             console.log(`[fund] +${Number(amount)} sats encaissés${r?.txid ? ` (${r.txid})` : ""}`);
           })
           .catch((e: any) => console.error("[fund] settle:", e?.message ?? e));
         return sendJson(res, 200, { bolt11, amount: Number(amount) });
       } catch (e: any) {
         return sendJson(res, 502, { error: e?.message ?? String(e) });
+      }
+    }
+
+    // Withdraw LN-out (admin) : paie un BOLT11 (collé depuis n'importe quel wallet LN) depuis
+    // le wallet du node via swap submarine Boltz. Bloque jusqu'au règlement (auto-refund si échec).
+    if (url.pathname === "/api/withdraw" && req.method === "POST") {
+      if (!requireAdmin(req, res)) return;
+      const rl = limiter.check(rateLimitKey(req, "withdraw"), { limit: 20, windowMs: 60_000 });
+      if (rl.limited) return sendJson(res, 429, { error: `rate limit — retry after ${rl.retryAfter}s` });
+
+      const body = parseJson(await readBody(req));
+      const invoice = String(body.invoice ?? "").trim().toLowerCase();
+      if (!/^ln(bc|tbs|tb)[0-9]/.test(invoice)) {
+        return sendJson(res, 400, { error: "facture BOLT11 invalide (attendu lnbc… / lntbs…)" });
+      }
+      try {
+        if (!rail.withdrawToLightning) throw new Error("rail.withdrawToLightning non disponible");
+        const r = await rail.withdrawToLightning(invoice);
+        helpers.broadcast?.({ type: "withdraw", amount: r.amount, txid: r.txid });
+        console.log(`[withdraw] -${r.amount} sats -> LN${r.txid ? ` (${r.txid})` : ""}`);
+        return sendJson(res, 200, { ok: true, amount: r.amount, txid: r.txid });
+      } catch (e: any) {
+        const msg = String(e?.message ?? e);
+        const code = /insufficient|fund|solde|limit|min|max|amount|expired|invoice/i.test(msg) ? 400 : 502;
+        return sendJson(res, code, { error: msg });
       }
     }
 
