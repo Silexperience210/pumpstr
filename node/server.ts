@@ -170,7 +170,7 @@ async function resolveProfile(pubkey: string): Promise<{ name: string; picture?:
   // HARDENING H3 : éviction LRU si plein
   if (profileCache.size >= MAX_PROFILE_CACHE) {
     const first = profileCache.keys().next().value;
-    profileCache.delete(first);
+    if (first) profileCache.delete(first);
   }
   let prof: { name: string; picture?: string } = { name: shortNpub(pubkey) };
   try {
