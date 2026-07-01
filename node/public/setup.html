@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pumpstr — Configuration</title>
+<style>
+  :root {
+    --bg: #0a0a0f; --card: #12121a; --text: #e8e8f0; --muted: #8888a0;
+    --accent: #ff6b35; --accent2: #00d4aa; --error: #ff4444; --success: #00d4aa;
+    --border: #1e1e2e; --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .wizard {
+    width: 100%; max-width: 560px; background: var(--card);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 32px; box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  }
+  .logo {
+    text-align: center; margin-bottom: 24px;
+  }
+  .logo h1 { font-size: 28px; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .logo p { color: var(--muted); font-size: 14px; margin-top: 4px; }
+  .steps {
+    display: flex; gap: 8px; margin-bottom: 28px;
+  }
+  .step {
+    flex: 1; height: 4px; border-radius: 2px; background: var(--border);
+    transition: background 0.3s;
+  }
+  .step.active { background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+  .step.done { background: var(--success); }
+  h2 { font-size: 20px; margin-bottom: 8px; }
+  .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+  .field { margin-bottom: 16px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  input, select, textarea {
+    width: 100%; padding: 12px 14px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 15px; transition: border-color 0.2s;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .btn {
+    width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 16px; font-weight: 600;
+    cursor: pointer; transition: all 0.2s; margin-top: 8px;
+  }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+  .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+  .btn-secondary { background: var(--border); color: var(--text); }
+  .btn-secondary:hover { background: #2a2a3a; }
+  .options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+  .option {
+    padding: 14px; background: var(--bg); border: 2px solid var(--border); border-radius: 10px;
+    cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 12px;
+  }
+  .option:hover { border-color: var(--accent); }
+  .option.selected { border-color: var(--accent2); background: rgba(0,212,170,0.05); }
+  .option-icon { font-size: 24px; width: 40px; text-align: center; }
+  .option-text { flex: 1; }
+  .option-title { font-weight: 600; font-size: 15px; }
+  .option-desc { font-size: 13px; color: var(--muted); }
+  .hidden { display: none !important; }
+  .alert { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+  .alert-error { background: rgba(255,68,68,0.1); border: 1px solid rgba(255,68,68,0.3); color: #ff8888; }
+  .alert-success { background: rgba(0,212,170,0.1); border: 1px solid rgba(0,212,170,0.3); color: var(--success); }
+  .price-tag { display: inline-block; padding: 4px 10px; background: var(--accent); color: #fff; border-radius: 20px; font-size: 12px; font-weight: 600; margin-left: 8px; }
+  .domain-check { display: flex; gap: 8px; }
+  .domain-check input { flex: 1; }
+  .domain-check button { width: auto; padding: 12px 20px; margin-top: 0; }
+  .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .btc-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: #f7931a; color: #fff; border-radius: 4px; font-size: 11px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="wizard">
+  <div class="logo">
+    <h1>⚡ Pumpstr</h1>
+    <p>Configuration de votre node de streaming</p>
+  </div>
+
+  <div class="steps" id="steps">
+    <div class="step active" data-step="1"></div>
+    <div class="step" data-step="2"></div>
+    <div class="step" data-step="3"></div>
+    <div class="step" data-step="4"></div>
+    <div class="step" data-step="5"></div>
+  </div>
+
+  <!-- ÉTAPE 1 : Wallet -->
+  <div id="step-1">
+    <h2>💰 Choisissez votre wallet</h2>
+    <p class="subtitle">Comment voulez-vous recevoir les tips ?</p>
+
+    <div class="options" id="wallet-options">
+      <div class="option selected" data-wallet="arkade" onclick="selectWallet(this)">
+        <div class="option-icon">🏦</div>
+        <div class="option-text">
+          <div class="option-title">Arkade <span class="btc-badge">⚡ Bitcoin</span></div>
+          <div class="option-desc">Wallet Arkade intégré — auto-généré, zero config. Recommandé pour débuter.</div>
+        </div>
+      </div>
+      <div class="option" data-wallet="nwc" onclick="selectWallet(this)">
+        <div class="option-icon">🔌</div>
+        <div class="option-text">
+          <div class="option-title">NWC — Nostr Wallet Connect</div>
+          <div class="option-desc">Connectez votre wallet existant (Alby, Mutiny, etc.) via une URI NWC.</div>
+        </div>
+      </div>
+      <div class="option" data-wallet="lnd" onclick="selectWallet(this)">
+        <div class="option-icon">🖥️</div>
+        <div class="option-text">
+          <div class="option-title">Mon nœud LND</div>
+          <div class="option-desc">Vous avez déjà un nœud Lightning (Umbrel, Start9, etc.). Full souveraineté.</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="wallet-arkade" class="wallet-config">
+      <div class="field">
+        <label>Réseau Arkade</label>
+        <select id="ark-network">
+          <option value="mutinynet">Mutinynet (Testnet — gratuit)</option>
+          <option value="mainnet">Mainnet (Vrais sats — production)</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="wallet-nwc" class="wallet-config hidden">
+      <div class="field">
+        <label>URI NWC</label>
+        <input type="text" id="nwc-uri" placeholder="nostr+walletconnect://...">
+        <p class="hint">Trouvez cette URI dans votre wallet (Alby → Connect, Mutiny → Nostr Wallet Connect)</p>
+      </div>
+    </div>
+
+    <div id="wallet-lnd" class="wallet-config hidden">
+      <div class="field">
+        <label>Host LND (gRPC/REST)</label>
+        <input type="text" id="lnd-host" placeholder="localhost:10009">
+      </div>
+      <div class="field">
+        <label>Macaroon (hex)</label>
+        <textarea id="lnd-macaroon" rows="3" placeholder="020103..."></textarea>
+      </div>
+      <div class="field">
+        <label>Certificat TLS (optionnel)</label>
+        <textarea id="lnd-cert" rows="3" placeholder="-----BEGIN CERTIFICATE-----..."></textarea>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Token Admin <span style="color:var(--error)">*</span></label>
+      <input type="text" id="admin-token" placeholder="minimum 32 caractères aléatoires" value="">
+      <p class="hint">Ce token protège votre dashboard. Ne le perdez pas !</p>
+    </div>
+
+    <button class="btn btn-primary" onclick="saveWallet()">Continuer →</button>
+  </div>
+
+  <!-- ÉTAPE 2 : Réseau -->
+  <div id="step-2" class="hidden">
+    <h2>🌐 Exposition réseau</h2>
+    <p class="subtitle">Comment les viewers accéderont à votre stream ?</p>
+
+    <div class="options">
+      <div class="option selected" data-network="local" onclick="selectNetwork(this)">
+        <div class="option-icon">🏠</div>
+        <div class="option-text">
+          <div class="option-title">Local uniquement</div>
+          <div class="option-desc">Accessible uniquement sur votre réseau WiFi. Parfait pour tester.</div>
+        </div>
+      </div>
+      <div class="option" data-network="tailscale" onclick="selectNetwork(this)">
+        <div class="option-icon">🔒</div>
+        <div class="option-text">
+          <div class="option-title">Tailscale (VPN mesh)</div>
+          <div class="option-desc">Votre node rejoint votre réseau Tailscale. Accès sécurisé de partout.</div>
+        </div>
+      </div>
+      <div class="option" data-network="public" onclick="selectNetwork(this)">
+        <div class="option-icon">🌍</div>
+        <div class="option-text">
+          <div class="option-title">Public (Internet)</div>
+          <div class="option-desc">Exposé sur Internet. Nécessite un nom de domaine et HTTPS.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Port HTTP</label>
+      <input type="number" id="port" value="4242">
+    </div>
+    <div class="field">
+      <label>Port HTTPS (auto-signé)</label>
+      <input type="number" id="https-port" value="4243">
+    </div>
+
+    <button class="btn btn-secondary" onclick="goToStep(1)">← Retour</button>
+    <button class="btn btn-primary" onclick="saveNetwork()">Continuer →</button>
+  </div>
+
+  <!-- ÉTAPE 3 : Domaine -->
+  <div id="step-3" class="hidden">
+    <h2>🔎 Nom de domaine</h2>
+    <p class="subtitle">Optionnel — pour un accès professionnel en HTTPS</p>
+
+    <div class="options">
+      <div class="option selected" data-domain-mode="skip" onclick="selectDomainMode(this)">
+        <div class="option-icon">⏭️</div>
+        <div class="option-text">
+          <div class="option-title">Passer cette étape</div>
+          <div class="option-desc">Je n'ai pas besoin de domaine pour l'instant.</div>
+        </div>
+      </div>
+      <div class="option" data-domain-mode="buy" onclick="selectDomainMode(this)">
+        <div class="option-icon">🛒</div>
+        <div class="option-text">
+          <div class="option-title">Acheter un domaine <span class="btc-badge">⚡ BTC</span></div>
+          <div class="option-desc">Achetez un .com, .net, .org via Namecheap (paiement Bitcoin accepté).</div>
+        </div>
+      </div>
+      <div class="option" data-domain-mode="own" onclick="selectDomainMode(this)">
+        <div class="option-icon">✅</div>
+        <div class="option-text">
+          <div class="option-title">J'ai déjà un domaine</div>
+          <div class="option-desc">J'ai déjà acheté mon nom de domaine chez un registrar.</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="domain-buy" class="domain-config hidden">
+      <div class="field">
+        <label>Rechercher un domaine</label>
+        <div class="domain-check">
+          <input type="text" id="domain-query" placeholder="monstream.com">
+          <button class="btn btn-secondary" onclick="checkDomain()" style="width:auto;margin-top:0;">Vérifier</button>
+        </div>
+        <div id="domain-result" style="margin-top:8px;"></div>
+      </div>
+      <div id="domain-buy-form" class="hidden">
+        <div class="alert alert-success" style="margin-top:12px;">
+          ✅ Domaine disponible ! <span class="price-tag">~$13 / an</span>
+        </div>
+        <div class="field">
+          <label>API User Namecheap</label>
+          <input type="text" id="namecheap-user" placeholder="votre-username">
+          <p class="hint">Créez un compte sur <a href="https://www.namecheap.com" target="_blank" style="color:var(--accent2)">namecheap.com</a> → Profile → API Access</p>
+        </div>
+        <div class="field">
+          <label>API Key Namecheap</label>
+          <input type="text" id="namecheap-key" placeholder="votre-api-key">
+        </div>
+        <div class="alert" style="background:rgba(247,147,26,0.1);border-color:rgba(247,147,26,0.3);color:#f7931a;margin-top:8px;">
+          💡 <strong>Paiement en Bitcoin :</strong> Rechargez votre compte Namecheap via BitPay (BTC, Lightning) avant l'achat.
+        </div>
+        <button class="btn btn-primary" onclick="buyDomain()">Acheter le domaine</button>
+      </div>
+    </div>
+
+    <div id="domain-own" class="domain-config hidden">
+      <div class="field">
+        <label>Votre domaine</label>
+        <input type="text" id="domain-name" placeholder="monstream.com">
+        <p class="hint">Configurez un enregistrement A vers l'IP de ce serveur.</p>
+      </div>
+      <button class="btn btn-primary" onclick="saveOwnDomain()">Utiliser ce domaine</button>
+    </div>
+
+    <button class="btn btn-secondary" onclick="goToStep(2)">← Retour</button>
+    <button class="btn btn-primary" id="domain-skip-btn" onclick="skipDomain()">Continuer →</button>
+  </div>
+
+  <!-- ÉTAPE 4 : HTTPS -->
+  <div id="step-4" class="hidden">
+    <h2>🔒 HTTPS</h2>
+    <p class="subtitle">Sécurisez les connexions de vos viewers</p>
+
+    <div class="options">
+      <div class="option selected" data-https="none" onclick="selectHttps(this)">
+        <div class="option-icon">❌</div>
+        <div class="option-text">
+          <div class="option-title">Pas de HTTPS</div>
+          <div class="option-desc">HTTP uniquement. Fonctionnel mais moins sécurisé.</div>
+        </div>
+      </div>
+      <div class="option" data-https="selfsigned" onclick="selectHttps(this)">
+        <div class="option-icon">🔐</div>
+        <div class="option-text">
+          <div class="option-title">Auto-signé (local)</div>
+          <div class="option-desc">Certificat généré automatiquement. Alertes de sécurité dans le navigateur.</div>
+        </div>
+      </div>
+      <div class="option" data-https="auto" onclick="selectHttps(this)">
+        <div class="option-icon">✅</div>
+        <div class="option-text">
+          <div class="option-title">Let's Encrypt (recommandé)</div>
+          <div class="option-desc">Certificat valide gratuitement. Nécessite un nom de domaine.</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="https-auto-form" class="hidden">
+      <div class="field">
+        <label>Email (pour Let's Encrypt)</label>
+        <input type="email" id="https-email" placeholder="vous@email.com">
+      </div>
+    </div>
+
+    <button class="btn btn-secondary" onclick="goToStep(3)">← Retour</button>
+    <button class="btn btn-primary" onclick="saveHttps()">Continuer →</button>
+  </div>
+
+  <!-- ÉTAPE 5 : Récap -->
+  <div id="step-5" class="hidden">
+    <h2>🚀 Récapitulatif</h2>
+    <p class="subtitle">Vérifiez votre configuration avant de lancer le node</p>
+
+    <div id="recap-content" style="background:var(--bg);padding:16px;border-radius:8px;margin-bottom:20px;font-size:14px;line-height:1.8;">
+      Chargement...
+    </div>
+
+    <div class="alert" style="background:rgba(0,212,170,0.05);border-color:var(--accent2);margin-bottom:16px;">
+      💡 Après le lancement, accédez à votre dashboard via l'URL affichée.
+    </div>
+
+    <button class="btn btn-secondary" onclick="goToStep(4)">← Retour</button>
+    <button class="btn btn-primary" onclick="completeSetup()">🚀 Lancer Pumpstr</button>
+  </div>
+
+  <div id="global-error"></div>
+</div>
+
+<script>
+let state = { wallet: "arkade", network: "local", domainMode: "skip", https: "none" };
+let domainAvailable = false;
+let selectedDomain = "";
+
+function selectWallet(el) {
+  document.querySelectorAll("#wallet-options .option").forEach(o => o.classList.remove("selected"));
+  el.classList.add("selected");
+  state.wallet = el.dataset.wallet;
+  document.querySelectorAll(".wallet-config").forEach(c => c.classList.add("hidden"));
+  document.getElementById("wallet-" + state.wallet).classList.remove("hidden");
+}
+
+function selectNetwork(el) {
+  document.querySelectorAll("[data-network]").forEach(o => o.classList.remove("selected"));
+  el.classList.add("selected");
+  state.network = el.dataset.network;
+}
+
+function selectDomainMode(el) {
+  document.querySelectorAll("[data-domain-mode]").forEach(o => o.classList.remove("selected"));
+  el.classList.add("selected");
+  state.domainMode = el.dataset.domainMode;
+  document.querySelectorAll(".domain-config").forEach(c => c.classList.add("hidden"));
+  if (state.domainMode === "buy") document.getElementById("domain-buy").classList.remove("hidden");
+  if (state.domainMode === "own") document.getElementById("domain-own").classList.remove("hidden");
+  document.getElementById("domain-skip-btn").style.display = state.domainMode === "skip" ? "" : "none";
+}
+
+function selectHttps(el) {
+  document.querySelectorAll("[data-https]").forEach(o => o.classList.remove("selected"));
+  el.classList.add("selected");
+  state.https = el.dataset.https;
+  document.getElementById("https-auto-form").classList.toggle("hidden", state.https !== "auto");
+}
+
+function goToStep(n) {
+  for (let i = 1; i <= 5; i++) {
+    document.getElementById("step-" + i).classList.toggle("hidden", i !== n);
+  }
+  document.querySelectorAll(".step").forEach((s, idx) => {
+    s.classList.remove("active", "done");
+    if (idx + 1 < n) s.classList.add("done");
+    if (idx + 1 === n) s.classList.add("active");
+  });
+  if (n === 5) showRecap();
+}
+
+function showError(msg) {
+  const el = document.getElementById("global-error");
+  el.innerHTML = `<div class="alert alert-error">${msg}</div>`;
+  setTimeout(() => el.innerHTML = "", 5000);
+}
+
+async function saveWallet() {
+  const adminToken = document.getElementById("admin-token").value.trim();
+  if (!adminToken || adminToken.length < 32) {
+    return showError("Le token admin doit faire au moins 32 caractères");
+  }
+
+  const payload = { backend: state.wallet, adminToken };
+  if (state.wallet === "arkade") {
+    payload.arkServerUrl = document.getElementById("ark-network").value === "mainnet" ? "https://mainnet.arkade.sh" : "https://mutinynet.arkade.sh";
+    payload.boltzNetwork = document.getElementById("ark-network").value;
+  } else if (state.wallet === "nwc") {
+    payload.nwcUri = document.getElementById("nwc-uri").value.trim();
+    if (!payload.nwcUri) return showError("URI NWC requise");
+  } else if (state.wallet === "lnd") {
+    payload.lndHost = document.getElementById("lnd-host").value.trim();
+    payload.lndMacaroon = document.getElementById("lnd-macaroon").value.trim();
+    if (!payload.lndHost || !payload.lndMacaroon) return showError("Host et macaroon LND requis");
+  }
+
+  try {
+    const r = await fetch("/api/setup/wallet", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    goToStep(2);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function saveNetwork() {
+  const payload = {
+    mode: state.network,
+    port: Number(document.getElementById("port").value) || 4242,
+    httpsPort: Number(document.getElementById("https-port").value) || 4243,
+  };
+  try {
+    const r = await fetch("/api/setup/network", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    goToStep(3);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function checkDomain() {
+  const domain = document.getElementById("domain-query").value.trim().toLowerCase();
+  if (!domain) return showError("Entrez un nom de domaine");
+  const result = document.getElementById("domain-result");
+  result.innerHTML = '<span class="loading"></span> Vérification...';
+  try {
+    const r = await fetch(`/api/setup/domain/check?domain=${encodeURIComponent(domain)}`);
+    const data = await r.json();
+    if (data.available) {
+      result.innerHTML = `<span style="color:var(--success)">✅ ${domain} est disponible !</span>`;
+      document.getElementById("domain-buy-form").classList.remove("hidden");
+      selectedDomain = domain;
+      domainAvailable = true;
+    } else {
+      result.innerHTML = `<span style="color:var(--error)">❌ ${domain} n'est pas disponible</span>`;
+      document.getElementById("domain-buy-form").classList.add("hidden");
+    }
+  } catch (e) {
+    result.innerHTML = `<span style="color:var(--error)">Erreur de vérification</span>`;
+  }
+}
+
+async function buyDomain() {
+  if (!domainAvailable || !selectedDomain) return showError("Vérifiez d'abord la disponibilité");
+  const payload = {
+    domain: selectedDomain,
+    provider: "namecheap",
+    namecheapApiUser: document.getElementById("namecheap-user").value.trim(),
+    namecheapApiKey: document.getElementById("namecheap-key").value.trim(),
+  };
+  if (!payload.namecheapApiUser || !payload.namecheapApiKey) {
+    return showError("Credentials Namecheap requis");
+  }
+  try {
+    const r = await fetch("/api/setup/domain", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    showError(`<span style="color:var(--success)">✅ Domaine ${selectedDomain} acheté !</span>`);
+    goToStep(4);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function saveOwnDomain() {
+  const domain = document.getElementById("domain-name").value.trim().toLowerCase();
+  if (!domain) return showError("Entrez votre domaine");
+  try {
+    const r = await fetch("/api/setup/domain", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ domain, provider: "manual" }) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    goToStep(4);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+function skipDomain() {
+  goToStep(4);
+}
+
+async function saveHttps() {
+  const payload = { mode: state.https };
+  if (state.https === "auto") {
+    payload.email = document.getElementById("https-email").value.trim();
+    if (!payload.email) return showError("Email requis pour Let's Encrypt");
+  }
+  try {
+    const r = await fetch("/api/setup/https", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    goToStep(5);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function showRecap() {
+  try {
+    const r = await fetch("/api/setup/status");
+    const data = await r.json();
+    const c = data.network;
+    let html = `
+      <strong>💰 Wallet :</strong> ${state.wallet.toUpperCase()}<br>
+      <strong>🌐 Réseau :</strong> ${state.network} (${c.ips?.join(", ") || "local"})<br>
+      <strong>🔎 Domaine :</strong> ${selectedDomain || "Aucun"}<br>
+      <strong>🔒 HTTPS :</strong> ${state.https === "auto" ? "Let's Encrypt" : state.https === "selfsigned" ? "Auto-signé" : "Désactivé"}<br>
+      <strong>📡 URL :</strong> ${selectedDomain ? `https://${selectedDomain}` : `http://${c.ips?.[0] || "localhost"}:4242`}
+    `;
+    document.getElementById("recap-content").innerHTML = html;
+  } catch (e) {
+    document.getElementById("recap-content").innerHTML = "Erreur de chargement";
+  }
+}
+
+async function completeSetup() {
+  const btn = document.querySelector("#step-5 .btn-primary");
+  btn.innerHTML = "<span class="loading"></span> Lancement...";
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/setup/complete", { method: "POST" });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    document.getElementById("step-5").innerHTML = `
+      <div style="text-align:center;padding:40px 0;">
+        <div style="font-size:64px;margin-bottom:16px;">🚀</div>
+        <h2>Pumpstr est en ligne !</h2>
+        <p style="color:var(--muted);margin:16px 0;">Le serveur redémarre avec votre configuration...</p>
+        <p style="font-size:14px;">Redirection dans <span id="countdown">5</span>s</p>
+      </div>
+    `;
+    let cd = 5;
+    const t = setInterval(() => {
+      cd--;
+      const el = document.getElementById("countdown");
+      if (el) el.textContent = cd;
+      if (cd <= 0) { clearInterval(t); window.location.href = "/dashboard.html"; }
+    }, 1000);
+  } catch (e) {
+    btn.innerHTML = "🚀 Lancer Pumpstr";
+    btn.disabled = false;
+    showError(e.message);
+  }
+}
+
+// Générer un token admin aléatoire au chargement
+document.getElementById("admin-token").value = "pumpstr_" + Array.from(crypto.getRandomValues(new Uint8Array(24)), b => b.toString(16).padStart(2, "0")).join("");
+</script>
+</body>
+</html>
