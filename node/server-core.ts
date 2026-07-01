@@ -160,6 +160,11 @@ export function createHandler(deps: HandlerDeps) {
     if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
     const url = parseUrl(req, config.port);
 
+    // --- Setup routes (forwarded from server.ts wrapper) ---
+    if (url.pathname === "/api/setup/status") {
+      return sendJson(res, 200, { setupComplete: true });
+    }
+
     if (url.pathname === "/api/creator") {
       return sendJson(res, 200, {
         address: config.creatorAddress,
