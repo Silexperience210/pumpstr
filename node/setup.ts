@@ -356,7 +356,7 @@ export function createSetupHandler(deps: SetupDeps) {
       envLines.push('STREAM_TITLE=🔴 Pumpstr Live');
       envLines.push('STREAM_SUMMARY=Streaming souverain sur Bitcoin — tips en sats, en direct.');
 
-      writeFileSync(envPath, envLines.join("
+    writeFileSync(envPath, envLines.join("\n") + "\n");
 ") + "
 ");
       db.setConfig("setup_complete", "1");
