@@ -1,15 +1,5 @@
 /**
  * setup.ts — Wizard de première configuration du node Pumpstr.
- *
- * Ce module n'est actif QUE si le node n'est pas encore configuré (pas de ADMIN_TOKEN
- * ou flag setup_complete absent). Une fois le setup terminé, ces routes retournent 404.
- *
- * Fonctionnalités :
- * - Détection auto du réseau (local, Tailscale, public)
- * - Configuration du wallet backend (Arkade / NWC / LND)
- * - Achat de nom de domaine (Namecheap API — paiement BTC via BitPay)
- * - Génération auto de certificat HTTPS (Let's Encrypt via Caddy)
- * - Persistance dans SQLite (table config)
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -21,10 +11,9 @@ export interface SetupDeps {
   db: PumpstrDb;
   envPath: string;
   here: string;
-  onComplete: () => void; // callback pour recharger le serveur
+  onComplete: () => void;
 }
 
-// --- Détection réseau ---
 function detectExposure(): { mode: "local" | "tailscale" | "public"; ips: string[]; tailscaleIp?: string } {
   const { networkInterfaces } = require("node:os");
   const ips: string[] = [];
@@ -41,13 +30,10 @@ function detectExposure(): { mode: "local" | "tailscale" | "public"; ips: string
   return { mode, ips, tailscaleIp };
 }
 
-// --- Vérification domaine (whois) ---
 async function checkDomainAvailability(domain: string): Promise<{ available: boolean; price?: number; currency?: string }> {
   try {
-    // Utilisation de l'API whoisjson (gratuit, pas de clé requise pour la vérif)
     const r = await fetch(`https://api.whoisjson.com/v1/whois?domain=${encodeURIComponent(domain)}`, { timeout: 10000 } as any);
     const data: any = await r.json();
-    // Si whois retourne une erreur "No match", le domaine est dispo
     const available = data?.raw?.includes("No match") || data?.raw?.includes("NOT FOUND") || data?.raw?.includes("Domain not found");
     return { available, price: 12.99, currency: "USD" };
   } catch {
@@ -55,7 +41,6 @@ async function checkDomainAvailability(domain: string): Promise<{ available: boo
   }
 }
 
-// --- Achat domaine Namecheap (stub — nécessite une clé API Namecheap) ---
 async function purchaseDomainNamecheap(
   domain: string,
   years: number,
@@ -63,7 +48,6 @@ async function purchaseDomainNamecheap(
   apiKey: string,
   clientIp: string
 ): Promise<{ success: boolean; orderId?: string; error?: string }> {
-  // Namecheap API endpoint
   const endpoint = "https://api.namecheap.com/xml.response";
   const params = new URLSearchParams({
     ApiUser: apiUser,
@@ -73,7 +57,6 @@ async function purchaseDomainNamecheap(
     Command: "namecheap.domains.create",
     DomainName: domain,
     Years: String(years),
-    // ... autres params requis (Registrant, etc.)
   });
   try {
     const r = await fetch(`${endpoint}?${params.toString()}`);
@@ -88,18 +71,8 @@ async function purchaseDomainNamecheap(
   }
 }
 
-// --- Génération Caddyfile ---
 function generateCaddyfile(domain: string, email: string, upstreamPort: number): string {
-  return `${domain} {
-    reverse_proxy localhost:${upstreamPort}
-    tls ${email}
-    header /* {
-        X-Frame-Options "SAMEORIGIN"
-        X-Content-Type-Options "nosniff"
-        Referrer-Policy "strict-origin-when-cross-origin"
-    }
-}
-`;
+  return `${domain} {\n  reverse_proxy localhost:${upstreamPort}\n  tls ${email}\n  header /* {\n    X-Frame-Options "SAMEORIGIN"\n    X-Content-Type-Options "nosniff"\n    Referrer-Policy "strict-origin-when-cross-origin"\n  }\n}\n`;
 }
 
 export function createSetupHandler(deps: SetupDeps) {
@@ -115,7 +88,6 @@ export function createSetupHandler(deps: SetupDeps) {
 
     const url = new URL(req.url ?? "/", `http://localhost`);
 
-    // --- GET /api/setup/status ---
     if (url.pathname === "/api/setup/status" && req.method === "GET") {
       const net = detectExposure();
       return sendJson(res, 200, {
@@ -131,7 +103,6 @@ export function createSetupHandler(deps: SetupDeps) {
       });
     }
 
-    // --- POST /api/setup/wallet ---
     if (url.pathname === "/api/setup/wallet" && req.method === "POST") {
       const rl = limiter.check(rateLimitKey(req, "setup-wallet"), { limit: 10, windowMs: 60_000 });
       if (rl.limited) return sendJson(res, 429, { error: "rate limit" });
@@ -143,7 +114,6 @@ export function createSetupHandler(deps: SetupDeps) {
         return sendJson(res, 400, { error: "ADMIN_TOKEN doit faire au moins 32 caractères" });
       }
 
-      // Validation du backend
       if (backend === "nwc") {
         const nwcUri = body.nwcUri?.trim();
         if (!nwcUri || !nwcUri.startsWith("nostr+walletconnect://")) {
@@ -172,13 +142,12 @@ export function createSetupHandler(deps: SetupDeps) {
       return sendJson(res, 200, { ok: true, backend });
     }
 
-    // --- POST /api/setup/network ---
     if (url.pathname === "/api/setup/network" && req.method === "POST") {
       const rl = limiter.check(rateLimitKey(req, "setup-network"), { limit: 10, windowMs: 60_000 });
       if (rl.limited) return sendJson(res, 429, { error: "rate limit" });
 
       const body = parseJson(await readBody(req));
-      const mode = body.mode ?? "local"; // local | tailscale | public
+      const mode = body.mode ?? "local";
       const port = Number(body.port ?? 4242);
       const httpsPort = Number(body.httpsPort ?? 4243);
 
@@ -190,7 +159,6 @@ export function createSetupHandler(deps: SetupDeps) {
       return sendJson(res, 200, { ok: true, mode, port, httpsPort });
     }
 
-    // --- GET /api/setup/domain/check ---
     if (url.pathname === "/api/setup/domain/check" && req.method === "GET") {
       const domain = url.searchParams.get("domain")?.trim().toLowerCase();
       if (!domain || !/^[a-z0-9-]+\.[a-z]{2,}$/.test(domain)) {
@@ -200,27 +168,24 @@ export function createSetupHandler(deps: SetupDeps) {
       return sendJson(res, 200, result);
     }
 
-    // --- POST /api/setup/domain ---
     if (url.pathname === "/api/setup/domain" && req.method === "POST") {
       const rl = limiter.check(rateLimitKey(req, "setup-domain"), { limit: 5, windowMs: 60_000 });
       if (rl.limited) return sendJson(res, 429, { error: "rate limit" });
 
       const body = parseJson(await readBody(req));
       const domain = body.domain?.trim().toLowerCase();
-      const provider = body.provider ?? "namecheap"; // namecheap | handshake | manual
+      const provider = body.provider ?? "namecheap";
 
       if (!domain || !/^[a-z0-9-]+\.[a-z]{2,}$/.test(domain)) {
         return sendJson(res, 400, { error: "domaine invalide" });
       }
 
-      // Vérification dispo
       const check = await checkDomainAvailability(domain);
       if (!check.available) {
         return sendJson(res, 400, { error: "Domaine non disponible ou vérification impossible" });
       }
 
       if (provider === "namecheap") {
-        // L'utilisateur doit fournir ses credentials Namecheap
         const apiUser = body.namecheapApiUser?.trim();
         const apiKey = body.namecheapApiKey?.trim();
         if (!apiUser || !apiKey) {
@@ -242,7 +207,6 @@ export function createSetupHandler(deps: SetupDeps) {
       }
 
       if (provider === "handshake") {
-        // HNS : domaine décentralisé, acheté via Namebase ou Bob Wallet
         db.setConfig("domain", domain);
         db.setConfig("domain_provider", "handshake");
         db.setConfig("step_domain", "1");
@@ -253,20 +217,18 @@ export function createSetupHandler(deps: SetupDeps) {
         });
       }
 
-      // Manual : l'utilisateur a déjà le domaine
       db.setConfig("domain", domain);
       db.setConfig("domain_provider", "manual");
       db.setConfig("step_domain", "1");
       return sendJson(res, 200, { ok: true, domain, note: "Configure un enregistrement A vers cette IP" });
     }
 
-    // --- POST /api/setup/https ---
     if (url.pathname === "/api/setup/https" && req.method === "POST") {
       const rl = limiter.check(rateLimitKey(req, "setup-https"), { limit: 10, windowMs: 60_000 });
       if (rl.limited) return sendJson(res, 429, { error: "rate limit" });
 
       const body = parseJson(await readBody(req));
-      const mode = body.mode ?? "auto"; // auto (Let's Encrypt) | selfsigned | none
+      const mode = body.mode ?? "auto";
       const email = body.email?.trim() ?? "admin@pumpstr.local";
       const domain = db.getConfig("domain") ?? "";
       const port = Number(db.getConfig("port") ?? 4242);
@@ -275,7 +237,6 @@ export function createSetupHandler(deps: SetupDeps) {
         if (!domain) {
           return sendJson(res, 400, { error: "Un nom de domaine est requis pour Let's Encrypt" });
         }
-        // Génère le Caddyfile
         const caddyfile = generateCaddyfile(domain, email, port);
         const caddyPath = join(here, "..", "Caddyfile");
         writeFileSync(caddyPath, caddyfile);
@@ -296,19 +257,16 @@ export function createSetupHandler(deps: SetupDeps) {
       return sendJson(res, 200, { ok: true, mode: "none" });
     }
 
-    // --- POST /api/setup/complete ---
     if (url.pathname === "/api/setup/complete" && req.method === "POST") {
       const rl = limiter.check(rateLimitKey(req, "setup-complete"), { limit: 5, windowMs: 60_000 });
       if (rl.limited) return sendJson(res, 429, { error: "rate limit" });
 
-      // Vérifie que les étapes obligatoires sont faites
       const required = ["step_wallet", "step_network"];
       const missing = required.filter((k) => db.getConfig(k) !== "1");
       if (missing.length > 0) {
         return sendJson(res, 400, { error: "Étapes manquantes", missing });
       }
 
-      // Génère le .env final
       const envLines: string[] = [
         "# === Pumpstr — Configuration Auto-Générée ===",
         `# Généré le ${new Date().toISOString()}`,
@@ -348,20 +306,17 @@ export function createSetupHandler(deps: SetupDeps) {
 
       envLines.push("");
       envLines.push("# Nostr");
-      envLines.push('NOSTR_RELAYS=wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net');
+      envLines.push("NOSTR_RELAYS=wss://relay.damus.io,wss://nos.lol,wss://relay.primal.net");
 
       envLines.push("");
       envLines.push("# Stream");
-      envLines.push('STREAM_D=pumpstr-live');
-      envLines.push('STREAM_TITLE=🔴 Pumpstr Live');
-      envLines.push('STREAM_SUMMARY=Streaming souverain sur Bitcoin — tips en sats, en direct.');
+      envLines.push("STREAM_D=pumpstr-live");
+      envLines.push("STREAM_TITLE=🔴 Pumpstr Live");
+      envLines.push("STREAM_SUMMARY=Streaming souverain sur Bitcoin — tips en sats, en direct.");
 
-    writeFileSync(envPath, envLines.join("\n") + "\n");
-") + "
-");
+      const nl = String.fromCharCode(10);
+      writeFileSync(envPath, envLines.join(nl) + nl);
       db.setConfig("setup_complete", "1");
-
-      // Redémarre le serveur
       onComplete();
 
       return sendJson(res, 200, { ok: true, message: "Setup terminé. Le serveur redémarre..." });
