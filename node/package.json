@@ -3,13 +3,18 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Pumpstr node — wallet Arkade + tips temps réel + Nostr/NIP-53 + watch.",
+  "description": "Pumpstr node \u2014 wallet Arkade + tips temps r\u00e9el + Nostr/NIP-53 + watch.",
   "license": "AGPL-3.0-only",
   "scripts": {
     "start": "tsx server.ts",
     "dev": "tsx watch server.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "test:setup": "tsx --test test/setup.test.ts",
+    "test:bugs": "tsx --test test/bugs-regression.test.ts",
+    "test:security": "tsx --test test/security.test.ts",
+    "test:integration": "tsx --test test/integration.test.ts",
+    "test:watch": "tsx --test --watch test/*.test.ts"
   },
   "dependencies": {
     "@arkade-os/boltz-swap": "latest",
