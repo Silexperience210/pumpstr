@@ -3,7 +3,7 @@
  *
  * Rend le node auto-suffisant pour la fédération : ses lives (kind:30311), ses
  * zap receipts (9735) et ses notes de reward (1) restent lisibles depuis
- * `ws://<node>/relay` même si les relais publics sont injoignables. C'est une
+ * `ws:///relay` même si les relais publics sont injoignables. C'est une
  * source souveraine de plus, pas un chokepoint : le portail agrège déjà
  * plusieurs relais (ADR-003), celui-ci en est juste un que LE node garantit.
  *
@@ -20,10 +20,9 @@ export interface NostrEvent {
 }
 export interface Filter {
   ids?: string[]; authors?: string[]; kinds?: number[]; since?: number; until?: number; limit?: number;
-  [tag: `#${string}`]: string[] | undefined;
+  [tag: `#{string}`]: string[] | undefined;
 }
 
-/** Clé d'unicité d'un event remplaçable/adressable (NIP-01), ou null si régulier. */
 export function replaceableKey(ev: NostrEvent): string | null {
   const { kind, pubkey } = ev;
   if (kind === 0 || kind === 3 || (kind >= 10000 && kind < 20000)) return `${kind}:${pubkey}`;
@@ -34,7 +33,6 @@ export function replaceableKey(ev: NostrEvent): string | null {
   return null;
 }
 
-/** Un event satisfait-il un filtre NIP-01 ? (ids/authors/kinds/since/until/#tags) */
 export function matchFilter(ev: NostrEvent, f: Filter): boolean {
   if (f.ids && !f.ids.includes(ev.id)) return false;
   if (f.authors && !f.authors.includes(ev.pubkey)) return false;
@@ -53,13 +51,11 @@ export function matchFilter(ev: NostrEvent, f: Filter): boolean {
 
 export const matchAny = (ev: NostrEvent, filters: Filter[]): boolean => filters.some((f) => matchFilter(ev, f));
 
-/** Store mémoire borné. Remplace les events remplaçables, évince le plus vieux au plafond. */
 export class RelayStore {
   private byId = new Map<string, NostrEvent>();
-  private repl = new Map<string, string>(); // replaceableKey -> id courant
+  private repl = new Map<string, string>();
   constructor(private max = 5000) {}
 
-  /** Insère ; renvoie "ok" (nouveau), "dup" (déjà vu), "old" (remplaçable périmé). */
   add(ev: NostrEvent): "ok" | "dup" | "old" {
     if (this.byId.has(ev.id)) return "dup";
     const rk = replaceableKey(ev);
@@ -72,13 +68,12 @@ export class RelayStore {
     }
     this.byId.set(ev.id, ev);
     if (this.byId.size > this.max) {
-      const oldest = this.byId.keys().next().value; // Map garde l'ordre d'insertion
+      const oldest = this.byId.keys().next().value;
       if (oldest !== undefined) this.byId.delete(oldest);
     }
     return "ok";
   }
 
-  /** Events matchant l'un des filtres, récents d'abord, tronqués au plus petit limit. */
   query(filters: Filter[], hardLimit = 500): NostrEvent[] {
     const out: NostrEvent[] = [];
     for (const ev of this.byId.values()) if (matchAny(ev, filters)) out.push(ev);
@@ -92,14 +87,30 @@ export class RelayStore {
 
 type WsLike = { readyState: number; send: (s: string) => void; on: (ev: string, cb: (...a: any[]) => void) => void };
 
-/**
- * Crée un relay : un store + un handler de connexion WS (NIP-01 EVENT/REQ/CLOSE)
- * + `publishLocal` pour que le node injecte ses propres events (toujours présents).
- */
+// H6 : rate limiting du relay (events par minute par IP)
+class RelayRateLimit {
+  private events = new Map<string, { count: number; resetAt: number }>();
+  private maxPerWindow = 120; // 2 events/sec en moyenne
+  private windowMs = 60_000;
+
+  check(ip: string): boolean {
+    const now = Date.now();
+    const bucket = this.events.get(ip);
+    if (!bucket || bucket.resetAt <= now) {
+      this.events.set(ip, { count: 1, resetAt: now + this.windowMs });
+      return true;
+    }
+    if (bucket.count >= this.maxPerWindow) return false;
+    bucket.count++;
+    return true;
+  }
+}
+
 export function createRelay(opts: { max?: number; verify?: (ev: any) => boolean } = {}) {
   const store = new RelayStore(opts.max);
-  const verify = opts.verify ?? verifyEvent; // injectable en test, vérif réelle sinon
-  const subs = new Map<WsLike, Map<string, Filter[]>>(); // ws -> subId -> filtres
+  const verify = opts.verify ?? verifyEvent;
+  const subs = new Map<WsLike, Map<string, Filter[]>>();
+  const rateLimit = new RelayRateLimit();
 
   function fanout(ev: NostrEvent) {
     for (const [ws, m] of subs) {
@@ -108,12 +119,11 @@ export function createRelay(opts: { max?: number; verify?: (ev: any) => boolean 
     }
   }
 
-  /** Le node pousse un de ses events : stocké localement + diffusé aux abonnés. */
   function publishLocal(ev: NostrEvent) {
     if (store.add(ev) === "ok") fanout(ev);
   }
 
-  function onConnection(ws: WsLike) {
+  function onConnection(ws: WsLike, ip?: string) {
     subs.set(ws, new Map());
     ws.on("message", (data: any) => {
       let msg: any;
@@ -124,6 +134,11 @@ export function createRelay(opts: { max?: number; verify?: (ev: any) => boolean 
       if (type === "EVENT") {
         const ev = msg[1];
         if (!ev || typeof ev.id !== "string") return;
+        // H6 : rate limit
+        if (ip && !rateLimit.check(ip)) {
+          ws.send(JSON.stringify(["OK", ev.id, false, "rate-limited: too many events"]));
+          return;
+        }
         let ok = false;
         try { ok = verify(ev); } catch { ok = false; }
         if (!ok) return ws.send(JSON.stringify(["OK", ev.id, false, "invalid: bad signature"]));

@@ -6,13 +6,13 @@
  * et les viewers (watch.html), sur le même WebSocket `/ws` que les tips. Le flux
  * vidéo/audio passe directement de pair à pair (souverain, pas de CDN).
  *
- * Modèle : 1 broadcaster, N viewers. Routage broadcaster→viewer par `to:<id>` ;
+ * Modèle : 1 broadcaster, N viewers. Routage broadcaster→viewer par `to:` ;
  * viewer→broadcaster implicite (un seul broadcaster). Pur & testable : `broadcastAll`
  * (diffusion live-started/ended à tous les clients /ws) est injecté.
  */
 type WsLike = { send: (s: string) => void; readyState: number };
 
-export function createSignaling(broadcastAll: (msg: any) => void, opts: { onGoLive?: () => void } = {}) {
+export function createSignaling(broadcastAll: (msg: any) => void, opts: { onGoLive?: () => void; onEndLive?: () => void } = {}) {
   let broadcaster: WsLike | null = null;
   const viewers = new Map<string, WsLike>();
   const ids = new WeakMap<WsLike, string>();
@@ -24,28 +24,34 @@ export function createSignaling(broadcastAll: (msg: any) => void, opts: { onGoLi
   function onMessage(ws: WsLike, m: any) {
     if (!m || typeof m.type !== "string") return;
     switch (m.type) {
-      case "golive": // le créateur passe en direct ; (re)déclenche le handshake avec les viewers présents
+      case "golive": {
+        // B5 : rejet si un broadcaster est déjà actif
+        if (broadcaster && broadcaster !== ws) {
+          send(ws, { type: "error", message: "Un live est déjà en cours sur ce node." });
+          return;
+        }
         broadcaster = ws;
-        opts.onGoLive?.(); // reset de la cagnotte du live côté serveur
+        opts.onGoLive?.();
         for (const [vid] of viewers) send(broadcaster, { type: "viewer-join", from: vid });
         broadcastAll({ type: "live-started" });
         break;
+      }
       case "endlive":
-        if (ws === broadcaster) { broadcaster = null; broadcastAll({ type: "live-ended" }); }
+        if (ws === broadcaster) { broadcaster = null; opts.onEndLive?.(); broadcastAll({ type: "live-ended" }); }
         break;
-      case "join": { // un viewer veut le flux
+      case "join": {
         const vid = idFor(ws); viewers.set(vid, ws);
         if (broadcaster) send(broadcaster, { type: "viewer-join", from: vid });
         else send(ws, { type: "no-live" });
         break;
       }
-      case "offer": // broadcaster -> viewer ciblé
+      case "offer":
         if (ws === broadcaster && m.to) send(viewers.get(m.to), { type: "offer", sdp: m.sdp });
         break;
-      case "answer": // viewer -> broadcaster
+      case "answer":
         send(broadcaster, { type: "answer", from: idFor(ws), sdp: m.sdp });
         break;
-      case "ice": // candidats des deux côtés
+      case "ice":
         if (ws === broadcaster && m.to) send(viewers.get(m.to), { type: "ice", candidate: m.candidate });
         else if (ws !== broadcaster) send(broadcaster, { type: "ice", from: idFor(ws), candidate: m.candidate });
         break;
@@ -53,7 +59,7 @@ export function createSignaling(broadcastAll: (msg: any) => void, opts: { onGoLi
   }
 
   function detach(ws: WsLike) {
-    if (ws === broadcaster) { broadcaster = null; broadcastAll({ type: "live-ended" }); return; }
+    if (ws === broadcaster) { broadcaster = null; opts.onEndLive?.(); broadcastAll({ type: "live-ended" }); return; }
     const id = ids.get(ws);
     if (id && viewers.delete(id)) send(broadcaster, { type: "viewer-leave", from: id });
   }

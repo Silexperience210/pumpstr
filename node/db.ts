@@ -5,8 +5,9 @@
  * par une base relationnelle locale, sans dépendance externe (Redis/Postgres).
  *
  * Tables :
- *   - tips       : tips reçus (temps réel + simulate)
- *   - rewards    : escrow réclamables créés par le créateur
+ * - tips : tips reçus (temps réel + simulate)
+ * - rewards : escrow réclamables créés par le créateur
+ * - live_state : persistance de la cagnotte du live courant (M4)
  */
 import Database from "better-sqlite3";
 import { join } from "node:path";
@@ -24,13 +25,13 @@ export interface TipRow {
 
 export interface RewardRow {
   id: string;
-  to: string; // pubkey hex
+  to: string;
   npub: string;
   amount: number;
   reason: string;
   ref: string;
   createdAt: number;
-  claimed: number; // 0/1
+  claimed: number;
 }
 
 export class PumpstrDb {
@@ -40,6 +41,7 @@ export class PumpstrDb {
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
     this.migrate();
+    // H7 : checkpoint WAL périodique (toutes les 10 min via setInterval externe)
   }
 
   private migrate() {
@@ -54,7 +56,6 @@ export class PumpstrDb {
         via TEXT NOT NULL,
         createdAt INTEGER NOT NULL
       );
-
       CREATE INDEX IF NOT EXISTS idx_tips_created ON tips(createdAt DESC);
 
       CREATE TABLE IF NOT EXISTS rewards (
@@ -67,13 +68,33 @@ export class PumpstrDb {
         createdAt INTEGER NOT NULL,
         claimed INTEGER NOT NULL DEFAULT 0
       );
-
       CREATE INDEX IF NOT EXISTS idx_rewards_to_claimed ON rewards("to", claimed);
       CREATE INDEX IF NOT EXISTS idx_rewards_created ON rewards(createdAt DESC);
+
+      CREATE TABLE IF NOT EXISTS live_state (
+        key TEXT PRIMARY KEY,
+        value INTEGER NOT NULL DEFAULT 0
+      );
     `);
   }
 
-  // ---------- Tips ----------
+  // M4 : persistance de la cagnotte du live
+  getLivePot(): number {
+    const row = this.db.prepare("SELECT value FROM live_state WHERE key = 'pot'").get() as { value: number } | undefined;
+    return row?.value ?? 0;
+  }
+  setLivePot(value: number) {
+    this.db.prepare("INSERT INTO live_state (key, value) VALUES ('pot', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(value);
+  }
+  resetLivePot() {
+    this.db.prepare("DELETE FROM live_state WHERE key = 'pot'").run();
+  }
+
+  // H7 : checkpoint WAL manuel
+  checkpoint() {
+    this.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  }
+
   addTip(tip: Omit<TipRow, "id">): TipRow {
     const stmt = this.db.prepare(
       "INSERT INTO tips (amount, name, picture, pubkey, comment, via, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)"
@@ -88,7 +109,6 @@ export class PumpstrDb {
       .all(limit) as TipRow[];
   }
 
-  // ---------- Rewards ----------
   addReward(r: RewardRow): RewardRow {
     const stmt = this.db.prepare(
       'INSERT INTO rewards (id, "to", npub, amount, reason, ref, createdAt, claimed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -123,26 +143,23 @@ export class PumpstrDb {
     return row.c;
   }
 
-  /** Tous les rewards émis (vue créateur/dashboard), récents d'abord. */
   allRewards(limit = 200): RewardRow[] {
     return this.db
       .prepare("SELECT * FROM rewards ORDER BY createdAt DESC LIMIT ?")
       .all(limit) as RewardRow[];
   }
 
-  /** Agrégat rewards pour le dashboard : combien émis / réclamés / encore parqués. */
   rewardStats(): { count: number; total: number; claimed: number; unclaimed: number; unclaimedTotal: number } {
     const r = this.db.prepare(`
       SELECT COUNT(*) AS count,
-             COALESCE(SUM(amount), 0) AS total,
-             COALESCE(SUM(claimed), 0) AS claimed,
-             COALESCE(SUM(CASE WHEN claimed = 0 THEN amount ELSE 0 END), 0) AS unclaimedTotal
+        COALESCE(SUM(amount), 0) AS total,
+        COALESCE(SUM(claimed), 0) AS claimed,
+        COALESCE(SUM(CASE WHEN claimed = 0 THEN amount ELSE 0 END), 0) AS unclaimedTotal
       FROM rewards
     `).get() as { count: number; total: number; claimed: number; unclaimedTotal: number };
     return { ...r, unclaimed: r.count - r.claimed };
   }
 
-  /** Agrégat tips pour le dashboard. */
   tipStats(): { count: number; total: number } {
     return this.db
       .prepare("SELECT COUNT(*) AS count, COALESCE(SUM(amount), 0) AS total FROM tips")
@@ -154,7 +171,6 @@ export class PumpstrDb {
   }
 }
 
-/** Chemin par défaut de la base côté node (monté sur un volume en Docker/Umbrel). */
 export function defaultDbPath(here: string): string {
   return process.env.DB_PATH ?? join(here, "pumpstr.db");
 }

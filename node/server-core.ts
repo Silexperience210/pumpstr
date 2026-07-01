@@ -17,11 +17,8 @@ export type Tipper = { name: string; pubkey?: string; picture?: string; comment?
 
 export interface HandlerDeps {
   rail: PaymentRail & {
-    /** Extension ArkadeRail pour corréler identité↔paiement LN-in. */
     createLnInvoiceWithSettle?(amount: bigint, description?: string): Promise<{ bolt11: string; settle: () => Promise<{ txid: string }> }>;
-    /** Extension ArkadeRail pour le refund d'un escrow expiré. */
     refund?(ref: { id: string }): Promise<{ id: string; status: string }>;
-    /** Extension ArkadeRail pour le withdraw LN-out (paie un BOLT11 depuis le wallet). */
     withdrawToLightning?(invoice: string): Promise<{ amount: number; txid: string; preimage?: string }>;
   };
   config: {
@@ -41,13 +38,13 @@ export interface HandlerDeps {
   db: PumpstrDb;
   state: {
     claimedTxids: Set<string>;
+    incomingFundsLock: boolean;
   };
   helpers: {
     registerTip: (amount: number, tipper: Tipper) => void;
     publishZapReceipt: (zapRequest: any, bolt11: string, amountSats: number) => Promise<void> | void;
     publishRewardNote: (pubkey: string, amount: number, claimUrl: string, reason: string) => Promise<void> | void;
     tipperFromBody: (body: any, via: string) => Promise<Tipper>;
-    /** Diffuse un message à tous les clients WS /ws (feedback live : fund/withdraw). */
     broadcast?: (msg: object) => void;
   };
   fs: {
@@ -67,22 +64,34 @@ function shortNpub(pubkey: string): string {
   try { return nip19.npubEncode(pubkey).slice(0, 11) + "…"; } catch { return pubkey.slice(0, 8) + "…"; }
 }
 
-/**
- * Résout une Lightning Address (LUD-16) en BOLT11 pour `amountSats`, côté node
- * (pas de CORS). HTTPS uniquement. Sert au withdraw : on saisit `nom@domaine`.
- */
+// H1 : échappement HTML pour éviter XSS dans l'overlay
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// H4 : fetch avec timeout pour Lightning Address
+async function fetchWithTimeout(url: string, opts: RequestInit = {}, timeoutMs = 15000): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function resolveLnAddress(address: string, amountSats: number): Promise<string> {
   const m = /^([a-z0-9._%+-]+)@([a-z0-9.-]+\.[a-z]{2,})$/i.exec(address.trim());
   if (!m) throw new Error("format attendu nom@domaine");
   const [, name, domain] = m;
-  const meta: any = await fetch(`https://${domain}/.well-known/lnurlp/${encodeURIComponent(name)}`).then((r) => r.json());
+  const meta: any = await fetchWithTimeout(`https://${domain}/.well-known/lnurlp/${encodeURIComponent(name)}`).then((r) => r.json());
   if (meta?.tag !== "payRequest" || !meta?.callback) throw new Error("LNURL-pay introuvable sur ce domaine");
   const msat = amountSats * 1000;
   if (msat < (meta.minSendable ?? 1) || msat > (meta.maxSendable ?? Number.MAX_SAFE_INTEGER)) {
     throw new Error(`montant hors limites (${Math.ceil((meta.minSendable ?? 0) / 1000)}–${Math.floor((meta.maxSendable ?? 0) / 1000)} sats)`);
   }
   const sep = String(meta.callback).includes("?") ? "&" : "?";
-  const cb: any = await fetch(`${meta.callback}${sep}amount=${msat}`).then((r) => r.json());
+  const cb: any = await fetchWithTimeout(`${meta.callback}${sep}amount=${msat}`).then((r) => r.json());
   if (!cb?.pr) throw new Error(cb?.reason || "le service n'a pas renvoyé de facture");
   return String(cb.pr);
 }
@@ -96,31 +105,59 @@ function settleAndZap(
   registerTip: (amount: number, tipper: Tipper) => void,
   publishZapReceipt: (zapRequest: any, bolt11: string, amountSats: number) => Promise<void> | void,
   zapRequest?: any,
+  broadcast?: (msg: object) => void,
+  incomingFundsLock?: { value: boolean },
 ) {
   if (!settle) return;
+  if (incomingFundsLock) incomingFundsLock.value = true;
   settle()
     .then((cl) => {
       if (cl?.txid) claimedTxids.add(cl.txid);
       registerTip(amount, tipper);
       if (zapRequest && bolt11) publishZapReceipt(zapRequest, bolt11, amount);
+      // B3 : notifier le viewer que son tip est reçu
+      broadcast?.({ type: "tip-confirmed", amount, name: tipper.name });
     })
-    .catch((e: any) => console.error("[ln] settle:", e?.message ?? e));
+    .catch((e: any) => {
+      console.error("[ln] settle:", e?.message ?? e);
+      broadcast?.({ type: "tip-failed", amount, error: "Le paiement a été reçu mais le crédit a échoué. Contacte l'admin." });
+    })
+    .finally(() => {
+      if (incomingFundsLock) incomingFundsLock.value = false;
+    });
 }
 
 export function createHandler(deps: HandlerDeps) {
   const { rail, config, db, state, helpers, fs } = deps;
   const limiter = new RateLimiter();
 
-  /** Gate admin : si ADMIN_TOKEN est défini, exige l'en-tête. Renvoie false (+401) si refusé. */
+  // H9 : timing-safe comparison pour l'admin token
   const requireAdmin = (req: any, res: any): boolean => {
-    if (config.adminToken && req.headers["x-admin-token"] !== config.adminToken) {
+    if (!config.adminToken) return true;
+    const token = req.headers["x-admin-token"] ?? "";
+    if (token.length !== config.adminToken.length) {
+      sendJson(res, 401, { error: "x-admin-token requis" });
+      return false;
+    }
+    let mismatch = 0;
+    for (let i = 0; i < token.length; i++) mismatch |= token.charCodeAt(i) ^ config.adminToken.charCodeAt(i);
+    if (mismatch !== 0) {
       sendJson(res, 401, { error: "x-admin-token requis" });
       return false;
     }
     return true;
   };
 
+  // H5 : CORS — autorise tout (fédération), avec credentials explicites
+  const setCors = (res: any) => {
+    res.setHeader("access-control-allow-origin", "*");
+    res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+    res.setHeader("access-control-allow-headers", "content-type, x-admin-token");
+  };
+
   return async (req: any, res: any) => {
+    setCors(res);
+    if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
     const url = parseUrl(req, config.port);
 
     if (url.pathname === "/api/creator") {
@@ -132,7 +169,6 @@ export function createHandler(deps: HandlerDeps) {
       });
     }
 
-    // Console créateur : tout ce qu'il faut pour piloter le node en un seul appel (admin).
     if (url.pathname === "/api/dashboard") {
       if (!requireAdmin(req, res)) return;
       let balance: number | null = null;
@@ -158,8 +194,6 @@ export function createHandler(deps: HandlerDeps) {
       });
     }
 
-    // Recharger le wallet du node en Lightning (admin) : facture LN-in -> VTXO.
-    // Pas de side-effect "tip" : on dédupe le txid pour que la subscription ne le recompte pas.
     if (url.pathname === "/api/fund" && req.method === "POST") {
       if (!requireAdmin(req, res)) return;
       const rl = limiter.check(rateLimitKey(req, "fund"), { limit: 20, windowMs: 60_000 });
@@ -177,8 +211,8 @@ export function createHandler(deps: HandlerDeps) {
         const { bolt11, settle } = await rail.createLnInvoiceWithSettle(amount, "Recharge wallet Pumpstr");
         settle()
           .then((r) => {
-            if (r?.txid) state.claimedTxids.add(r.txid); // pas un tip : suppression du double-compte
-            helpers.broadcast?.({ type: "fund", amount: Number(amount), txid: r?.txid ?? "" }); // efface l'invoice côté UI
+            if (r?.txid) state.claimedTxids.add(r.txid);
+            helpers.broadcast?.({ type: "fund", amount: Number(amount), txid: r?.txid ?? "" });
             console.log(`[fund] +${Number(amount)} sats encaissés${r?.txid ? ` (${r.txid})` : ""}`);
           })
           .catch((e: any) => console.error("[fund] settle:", e?.message ?? e));
@@ -188,8 +222,6 @@ export function createHandler(deps: HandlerDeps) {
       }
     }
 
-    // Withdraw LN-out (admin) : paie un BOLT11 (collé depuis n'importe quel wallet LN) depuis
-    // le wallet du node via swap submarine Boltz. Bloque jusqu'au règlement (auto-refund si échec).
     if (url.pathname === "/api/withdraw" && req.method === "POST") {
       if (!requireAdmin(req, res)) return;
       const rl = limiter.check(rateLimitKey(req, "withdraw"), { limit: 20, windowMs: 60_000 });
@@ -198,7 +230,6 @@ export function createHandler(deps: HandlerDeps) {
       const body = parseJson(await readBody(req));
       let invoice = String(body.invoice ?? "").trim().toLowerCase();
       const lnAddress = String(body.lnAddress ?? "").trim();
-      // Lightning Address (LUD-16) -> on résout en BOLT11 pour le montant donné.
       if (!invoice && lnAddress) {
         let amount: bigint;
         try { amount = parseSats(body.amount, { min: 1n, max: 100_000_000_000n }); }
@@ -222,7 +253,6 @@ export function createHandler(deps: HandlerDeps) {
       }
     }
 
-    // LUD-16 Lightning Address
     if (url.pathname.startsWith("/.well-known/lnurlp/")) {
       const rl = limiter.check(rateLimitKey(req, "lnurlp"), { limit: 60, windowMs: 60_000 });
       if (rl.limited) return sendJson(res, 429, { status: "ERROR", reason: `rate limit — retry after ${rl.retryAfter}s` });
@@ -241,7 +271,6 @@ export function createHandler(deps: HandlerDeps) {
       });
     }
 
-    // Callback LNURL-pay
     if (url.pathname === "/api/lnurlp/callback") {
       const rl = limiter.check(rateLimitKey(req, "lnurlp-callback"), { limit: 60, windowMs: 60_000 });
       if (rl.limited) return sendJson(res, 429, { status: "ERROR", reason: `rate limit — retry after ${rl.retryAfter}s` });
@@ -264,7 +293,7 @@ export function createHandler(deps: HandlerDeps) {
         const description = zapRequest ? JSON.stringify(zapRequest) : config.lnMetadata;
         const { bolt11, settle } = await rail.createLnInvoiceWithSettle(sats, description);
         const tipper = await helpers.tipperFromBody({ zapRequest, comment }, "lnaddr");
-        settleAndZap(settle, bolt11, Number(sats), tipper, state.claimedTxids, helpers.registerTip, helpers.publishZapReceipt, zapRequest);
+        settleAndZap(settle, bolt11, Number(sats), tipper, state.claimedTxids, helpers.registerTip, helpers.publishZapReceipt, zapRequest, helpers.broadcast, { value: state.incomingFundsLock });
         return sendJson(res, 200, { pr: bolt11, routes: [] });
       } catch (e: any) {
         return sendJson(res, 200, { status: "ERROR", reason: e?.message ?? String(e) });
@@ -275,7 +304,6 @@ export function createHandler(deps: HandlerDeps) {
       return sendJson(res, 200, { url: config.stream.url, demo: !config.stream.url, title: config.stream.title });
     }
 
-    // Tip-to-trigger : le menu d'actions (prix -> effet) pour les pages de tip.
     if (url.pathname === "/api/actions") {
       return sendJson(res, 200, { actions: config.actions ?? [] });
     }
@@ -287,7 +315,6 @@ export function createHandler(deps: HandlerDeps) {
       const body = parseJson(await readBody(req));
       let amount: bigint;
       try {
-        // Un tip entre via un swap Boltz reverse (LN -> Arkade) : plancher Boltz = 333 sats.
         amount = parseSats(body.amount, { min: 333n, max: 100_000_000_000n });
       } catch {
         return sendJson(res, 400, { error: "montant invalide — minimum 333 sats (plancher d'un swap Lightning entrant)" });
@@ -297,14 +324,13 @@ export function createHandler(deps: HandlerDeps) {
       try {
         if (!rail.createLnInvoiceWithSettle) throw new Error("rail.createLnInvoiceWithSettle non disponible");
         const { bolt11, settle } = await rail.createLnInvoiceWithSettle(amount, zapRequest ? JSON.stringify(zapRequest) : "Tip Pumpstr");
-        settleAndZap(settle, bolt11, Number(amount), tipper, state.claimedTxids, helpers.registerTip, helpers.publishZapReceipt, zapRequest);
+        settleAndZap(settle, bolt11, Number(amount), tipper, state.claimedTxids, helpers.registerTip, helpers.publishZapReceipt, zapRequest, helpers.broadcast, { value: state.incomingFundsLock });
         return sendJson(res, 200, { bolt11, amount: Number(amount) });
       } catch (e: any) {
         return sendJson(res, 502, { error: e?.message ?? String(e) });
       }
     }
 
-    // Rewards
     if (url.pathname === "/api/reward" && req.method === "POST") {
       const rl = limiter.check(rateLimitKey(req, "reward"), { limit: 30, windowMs: 60_000 });
       if (rl.limited) return sendJson(res, 429, { error: `rate limit — retry after ${rl.retryAfter}s` });
@@ -340,7 +366,6 @@ export function createHandler(deps: HandlerDeps) {
       }
     }
 
-    // Refund admin d'un escrow expiré
     if (url.pathname === "/api/reward/refund" && req.method === "POST") {
       if (!requireAdmin(req, res)) return;
       const body = parseJson(await readBody(req));
@@ -386,7 +411,6 @@ export function createHandler(deps: HandlerDeps) {
       return sendJson(res, 200, { ok: true, amount, name: tipper.name });
     }
 
-    // NIP-11 : document d'info du relay embarqué (le WS upgrade /relay est géré en amont).
     if (url.pathname === "/relay") {
       res.setHeader("content-type", "application/nostr+json");
       res.setHeader("access-control-allow-origin", "*");
@@ -400,7 +424,6 @@ export function createHandler(deps: HandlerDeps) {
       }));
     }
 
-    // portail fédéré
     if (url.pathname === "/portal" || url.pathname === "/portal/") {
       try {
         const data = await readFile(join(fs.portalDir, "index.html"));
@@ -409,7 +432,6 @@ export function createHandler(deps: HandlerDeps) {
       } catch { res.statusCode = 404; return res.end("portal not built"); }
     }
 
-    // statique
     const p = url.pathname === "/" ? "/overlay.html" : url.pathname;
     try {
       const data = await readFile(join(fs.publicDir, p));

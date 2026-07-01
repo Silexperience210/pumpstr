@@ -3,15 +3,15 @@
  *
  * Tient un VRAI wallet créateur Arkade (validé au spike A) ET dérive l'identité Nostr
  * du créateur de LA MÊME clé (ADR-004 : 1 seed -> npub + wallet). Expose :
- *   - un overlay (source OBS) qui explose à chaque tip, AVEC l'identité Nostr du tippeur
- *   - une page tip (viewer) : le tippeur s'authentifie en Nostr (NIP-07 ou clé éphémère)
- *     et signe une zap request (NIP-57 kind 9734) ; on génère une vraie facture LN-in
- *   - un flux WebSocket temps réel
+ * - un overlay (source OBS) qui explose à chaque tip, AVEC l'identité Nostr du tippeur
+ * - une page tip (viewer) : le tippeur s'authentifie en Nostr (NIP-07 ou clé éphémère)
+ *   et signe une zap request (NIP-57 kind 9734) ; on génère une vraie facture LN-in
+ * - un flux WebSocket temps réel
  *
  * Identité d'un tip : le tippeur signe une zap request -> on VÉRIFIE la signature, on
  * RÉSOUT son profil (kind 0 : nom + avatar), et on corrèle identité<->paiement via le swap.
  *
- * Run : npm start   (Node 22 LTS, réseau réel requis)
+ * Run : npm start (Node 22 LTS, réseau réel requis)
  */
 import "fake-indexeddb/auto"; // Node n'a pas IndexedDB ; en RN -> ./adapters/asyncStorage
 import { EventSource } from "eventsource"; // SSE du watcher SDK ; absent en Node, react-native-sse en RN
@@ -66,8 +66,6 @@ for (const ev of ["unhandledRejection", "uncaughtException"] as const) {
 }
 
 // --- Config réseau persistante : charge node/.env s'il existe (Node >=20.12) ---
-// Fige mainnet/signet sans dépendre d'une variable d'env au lancement (un restart
-// ne doit jamais retomber en signet en silence quand on croit être en mainnet).
 try {
   const envFile = fileURLToPath(new URL(".env", import.meta.url));
   if (existsSync(envFile)) { (process as any).loadEnvFile(envFile); console.log(`[env] chargé : ${envFile}`); }
@@ -82,21 +80,18 @@ const STREAM = {
   d: process.env.STREAM_D ?? "pumpstr-live",
   title: process.env.STREAM_TITLE ?? "🔴 Pumpstr live",
   summary: process.env.STREAM_SUMMARY ?? "Streaming souverain sur Bitcoin — tips en sats, en direct.",
-  url: process.env.STREAM_URL ?? "",     // URL HLS (la vidéo = couche suivante) ; vide pour l'instant
-  image: process.env.STREAM_IMAGE ?? "", // miniature
+  url: process.env.STREAM_URL ?? "",
+  image: process.env.STREAM_IMAGE ?? "",
 };
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC = join(HERE, "public");
-const KEY_FILE = process.env.KEY_FILE ?? join(HERE, ".creator-key"); // en conteneur : monté sur un volume
+const KEY_FILE = process.env.KEY_FILE ?? join(HERE, ".creator-key");
 
-// HTTPS local (cert auto-signé) : getUserMedia (caméra/micro du Studio, scan QR) exige un
-// contexte sécurisé -> bloqué sur http://<IP-LAN>. On sert AUSSI en https (port HTTPS_PORT)
-// pour que ça marche sur le tel (accepter l'alerte de cert auto-signé). http reste intact.
 const TLS_DIR = join(HERE, ".tls");
 const TLS_KEY = join(TLS_DIR, "key.pem");
 const TLS_CERT = join(TLS_DIR, "cert.pem");
 function localIps(): string[] {
-  const ips = new Set<string>(["127.0.0.1"]);
+  const ips = new Set(["127.0.0.1"]);
   for (const nets of Object.values(networkInterfaces())) for (const n of nets ?? []) if (n.family === "IPv4" && !n.internal) ips.add(n.address);
   return [...ips];
 }
@@ -111,26 +106,22 @@ function ensureTlsCert(): boolean {
     return true;
   } catch (e: any) { console.error("[tls] HTTPS indispo (openssl absent ?) :", e?.message ?? e); return false; }
 }
-// Lightning Address (LUD-16) : <user>@<domaine>. En prod, mets LN_ADDRESS_BASE_URL=https://ton-domaine
-// (exposé via Cloudflare Tunnel sur Umbrel) pour que n'importe quel wallet LN puisse payer.
+
 const LN_ADDRESS_USER = process.env.LN_ADDRESS_USER || "pay";
 const LN_ADDRESS_BASE = (process.env.LN_ADDRESS_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
 const lnAddress = `${LN_ADDRESS_USER}@${LN_ADDRESS_BASE.replace(/^https?:\/\//, "")}`;
 const lnMetadata = JSON.stringify([["text/plain", `Tip ⚡ ${lnAddress} (Pumpstr)`], ["text/identifier", lnAddress]]);
 
-// --- Rewards : escrow réclamable (ADR-004/006). Le créateur récompense un bénéficiaire (npub),
-// potentiellement offline ; les sats sont parqués dans un VTXO que LUI SEUL réclame (sa clé). ---
-const PLATFORM_SPLIT_BPS = Number(process.env.PLATFORM_SPLIT_BPS ?? 0);        // part plateforme (ADR-006)
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";                            // si défini : requis pour créer
+const PLATFORM_SPLIT_BPS = Number(process.env.PLATFORM_SPLIT_BPS ?? 0);
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? "";
 const PUBLIC_BASE = (process.env.PUBLIC_BASE_URL || LN_ADDRESS_BASE).replace(/\/$/, "");
 
-// Tip-to-trigger : tiper EXACTEMENT ce prix déclenche l'effet (overlay + viewers).
 const ACTIONS = [
-  { id: "horn",     label: "Klaxon",         emoji: "📯", sats: 500,   effect: "horn" },
-  { id: "hearts",   label: "Pluie de cœurs", emoji: "💚", sats: 1000,  effect: "hearts" },
-  { id: "confetti", label: "Confettis",      emoji: "🎉", sats: 2100,  effect: "confetti" },
-  { id: "rainbow",  label: "Arc-en-ciel",    emoji: "🌈", sats: 5000,  effect: "rainbow" },
-  { id: "mega",     label: "MEGA HYPE",      emoji: "🚀", sats: 21000, effect: "mega" },
+  { id: "horn", label: "Klaxon", emoji: "📯", sats: 500, effect: "horn" },
+  { id: "hearts", label: "Pluie de cœurs", emoji: "💚", sats: 1000, effect: "hearts" },
+  { id: "confetti", label: "Confettis", emoji: "🎉", sats: 2100, effect: "confetti" },
+  { id: "rainbow", label: "Arc-en-ciel", emoji: "🌈", sats: 5000, effect: "rainbow" },
+  { id: "mega", label: "MEGA HYPE", emoji: "🚀", sats: 21000, effect: "mega" },
 ];
 
 function loadOrCreateKeyHex(): string {
@@ -139,31 +130,35 @@ function loadOrCreateKeyHex(): string {
   globalThis.crypto.getRandomValues(b);
   const hex = Buffer.from(b).toString("hex");
   writeFileSync(KEY_FILE, hex);
+  console.log(`[key] nouvelle clé créée → ${KEY_FILE} (BACKUP CE FICHIER)`);
   return hex;
 }
 
-// ---------- identités ----------
+// --- identités ----------
 type Tipper = { name: string; pubkey?: string; picture?: string; comment?: string; via: string };
 let creatorAddress = "";
 
-// ---------- Persistance SQLite ----------
+// --- Persistance SQLite ----------
 const db = new PumpstrDb(defaultDbPath(HERE));
 console.log(`[db] persistance SQLite : ${defaultDbPath(HERE)}`);
 
-// ---------- Relay Nostr embarqué (NIP-01) ----------
-// Source fédérée souveraine : le node sert ses propres events (lives 30311, zap
-// receipts 9735, notes reward) sur ws://<node>/relay, même si les relais publics
-// sont injoignables. Pas un chokepoint — juste un relais de plus, garanti par le node.
+// --- Relay Nostr embarqué (NIP-01) ----------
 const relay = createRelay();
 
-// ---------- Nostr (résolution de profil + vérif des zap requests) ----------
+// --- Nostr (résolution de profil + vérif des zap requests) ----------
 const pool = new SimplePool();
 const profileCache = new Map<string, { name: string; picture?: string }>();
+const MAX_PROFILE_CACHE = 2000; // HARDENING H3 : limite du cache
 const shortNpub = (pubkey: string) => {
   try { return nip19.npubEncode(pubkey).slice(0, 11) + "…"; } catch { return pubkey.slice(0, 8) + "…"; }
 };
 async function resolveProfile(pubkey: string): Promise<{ name: string; picture?: string }> {
   if (profileCache.has(pubkey)) return profileCache.get(pubkey)!;
+  // HARDENING H3 : éviction LRU si plein
+  if (profileCache.size >= MAX_PROFILE_CACHE) {
+    const first = profileCache.keys().next().value;
+    profileCache.delete(first);
+  }
   let prof: { name: string; picture?: string } = { name: shortNpub(pubkey) };
   try {
     const ev: any = await Promise.race([
@@ -178,7 +173,6 @@ async function resolveProfile(pubkey: string): Promise<{ name: string; picture?:
   profileCache.set(pubkey, prof);
   return prof;
 }
-/** Vérifie une zap request (NIP-57 kind 9734) signée et en extrait le tippeur. */
 function verifiedTipper(zr: any): { pubkey: string; comment: string } | null {
   try {
     if (!zr || typeof zr !== "object" || !verifyEvent(zr)) return null;
@@ -191,18 +185,15 @@ async function tipperFromBody(body: any, via: string): Promise<Tipper> {
     const prof = await resolveProfile(v.pubkey);
     return { name: prof.name, pubkey: v.pubkey, picture: prof.picture, comment: v.comment || (body?.comment ?? ""), via };
   }
-  // pas d'identité Nostr signée -> anonyme (nom libre optionnel)
   return { name: (body?.name || "anon").toString().slice(0, 24), comment: (body?.comment ?? "").toString().slice(0, 140), via };
 }
 
-// ---------- Arkade via le PaymentRail (ADR-007) ----------
-// La MÊME clé dérive le wallet Arkade (rail) ET l'identité Nostr (ici) — ADR-004.
+// --- Arkade via le PaymentRail (ADR-007) ----------
 console.log(`[arkade] connexion à ${ARK_SERVER_URL} ...`);
 const keyHex = loadOrCreateKeyHex();
 const creatorSk = Uint8Array.from(Buffer.from(keyHex, "hex"));
 const creatorPubkey = getPublicKey(creatorSk);
 const creatorNpub = nip19.npubEncode(creatorPubkey);
-// lnAutoClaim:false -> on règle explicitement (settle) pour corréler identité↔paiement.
 const rail = await ArkadeRail.fromSeed(keyHex, {
   arkServerUrl: ARK_SERVER_URL,
   boltzNetwork: BOLTZ_NETWORK as any,
@@ -210,64 +201,72 @@ const rail = await ArkadeRail.fromSeed(keyHex, {
 });
 creatorAddress = await rail.getAddress();
 console.log(`[arkade] créateur prêt`);
-console.log(`         adresse : ${creatorAddress}`);
-console.log(`         npub    : ${creatorNpub}`);
+console.log(`  adresse : ${creatorAddress}`);
+console.log(`  npub    : ${creatorNpub}`);
 
-// ---------- WebSocket : pousse les tips ----------
+// --- WebSocket : pousse les tips ----------
 const clients = new Set<WebSocket>();
-let livePot = 0; // cagnotte du live courant (sats) : reset au go-live, diffusée avec chaque tip
+// M4 : livePot persistant dans SQLite
+let livePot = db.getLivePot();
 function broadcast(msg: object) {
   const s = JSON.stringify(msg);
-  for (const c of clients) if (c.readyState === 1) c.send(s);
+  for (const c of clients) {
+    if (c.readyState === 1) {
+      try { c.send(s); } catch { /* client mort */ }
+    }
+  }
 }
 
-// Signaling WebRTC (go-live P2P) : relaie offer/answer/ICE entre le créateur et les viewers.
-// onGoLive : la cagnotte du live repart de zéro et on prévient tous les viewers.
-const sig = createSignaling((msg) => broadcast(msg), { onGoLive: () => { livePot = 0; broadcast({ type: "pot", pot: 0 }); } });
+// Signaling WebRTC (go-live P2P)
+const sig = createSignaling((msg) => broadcast(msg), {
+  onGoLive: () => { livePot = 0; db.setLivePot(0); broadcast({ type: "pot", pot: 0 }); },
+  onEndLive: () => { /* B1 : le live est terminé, publishLive s'en occupera */ },
+});
 function registerTip(amount: number, t: Tipper) {
   if (!Number.isFinite(amount) || amount <= 0) return;
   const at = Date.now();
   livePot += amount;
-  const action = ACTIONS.find((a) => a.sats === amount); // prix exact -> effet déclenché
+  db.setLivePot(livePot); // M4 : persistance
+  const action = ACTIONS.find((a) => a.sats === amount);
   db.addTip({ amount, name: t.name, picture: t.picture, pubkey: t.pubkey, comment: t.comment, via: t.via, createdAt: at });
   broadcast({ type: "tip", amount, at, name: t.name, pubkey: t.pubkey, picture: t.picture, comment: t.comment, via: t.via, pot: livePot,
     action: action ? { id: action.id, label: action.label, emoji: action.emoji, effect: action.effect } : undefined });
   console.log(`[tip] +${amount} sats — ${t.name} (${t.via})${t.comment ? ` : "${t.comment}"` : ""}`);
 }
 
-// ---------- NIP-53 : publier le live sur Nostr (le portail fédéré l'agrège) ----------
+// --- NIP-53 : publier le live sur Nostr ----------
 const startedAt = Math.floor(Date.now() / 1000);
 function buildLiveEvent(status: "live" | "ended", participants: number) {
   const now = Math.floor(Date.now() / 1000);
   const tags: string[][] = [
-    ["d", STREAM.d],                              // identifiant stable -> event remplaçable (NIP-53)
+    ["d", STREAM.d],
     ["title", STREAM.title],
     ["summary", STREAM.summary],
     ["status", status],
     ["starts", String(startedAt)],
     ["current_participants", String(participants)],
-    ["p", creatorPubkey, RELAYS[0] ?? "", "host"], // l'hôte
-    ["t", "pumpstr"],                              // le portail filtre là-dessus
+    ["p", creatorPubkey, RELAYS[0] ?? "", "host"],
+    ["t", "pumpstr"],
     ["client", "pumpstr"],
   ];
   if (STREAM.url) tags.push(["streaming", STREAM.url]);
   if (STREAM.image) tags.push(["image", STREAM.image]);
-  tags.push(["r", PUBLIC_BASE]); // URL du node pour que le portail redirige le viewer
+  tags.push(["r", PUBLIC_BASE]);
   if (status === "ended") tags.push(["ends", String(now)]);
   return finalizeEvent({ kind: 30311, created_at: now, content: "", tags }, creatorSk);
 }
 async function publishLive(status: "live" | "ended") {
-  const ev = buildLiveEvent(status, clients.size);
-  relay.publishLocal(ev as any); // toujours dispo sur le relay local, même si les relais publics échouent
+  const ev = buildLiveEvent(status, sig.viewerCount());
+  relay.publishLocal(ev as any);
   try {
     await Promise.any(pool.publish(RELAYS, ev));
-    console.log(`[nostr] live "${status}" publié (kind:30311 d=${STREAM.d}, ${clients.size} viewers) -> ${RELAYS.length} relais`);
+    console.log(`[nostr] live "${status}" publié (kind:30311 d=${STREAM.d}, ${sig.viewerCount()} viewers) -> ${RELAYS.length} relais`);
   } catch (e: any) {
     console.error("[nostr] publishLive:", e?.message ?? e);
   }
 }
 
-// ---------- NIP-57 : zap receipt (9735) sur un VRAI paiement LN réglé ----------
+// --- NIP-57 : zap receipt ----------
 async function publishZapReceipt(zapRequest: any, bolt11: string, amountSats: number) {
   try {
     const receipt = finalizeEvent({
@@ -275,14 +274,14 @@ async function publishZapReceipt(zapRequest: any, bolt11: string, amountSats: nu
       created_at: Math.floor(Date.now() / 1000),
       content: typeof zapRequest?.content === "string" ? zapRequest.content : "",
       tags: [
-        ["p", creatorPubkey],                                      // bénéficiaire (le créateur)
-        ...(zapRequest?.pubkey ? [["P", zapRequest.pubkey]] : []), // le tippeur
+        ["p", creatorPubkey],
+        ...(zapRequest?.pubkey ? [["P", zapRequest.pubkey]] : []),
         ["bolt11", bolt11],
-        ["description", JSON.stringify(zapRequest)],               // la zap request 9734
+        ["description", JSON.stringify(zapRequest)],
         ["amount", String(amountSats * 1000)],
       ],
     }, creatorSk);
-    relay.publishLocal(receipt as any); // le leaderboard/portail peut lire ce zap depuis le relay local
+    relay.publishLocal(receipt as any);
     await Promise.any(pool.publish(RELAYS, receipt));
     console.log(`[nostr] zap receipt 9735 publié (${amountSats} sats)`);
   } catch (e: any) {
@@ -290,9 +289,7 @@ async function publishZapReceipt(zapRequest: any, bolt11: string, amountSats: nu
   }
 }
 
-// ---------- NIP : notifier le bénéficiaire d'un reward (kind:1 le taguant) ----------
-// Le ref n'est pas un secret (le VTXO n'est réclamable que par la clé du bénéficiaire) ; on
-// pointe quand même vers une page de claim plutôt que de l'exposer en clair dans la note.
+// --- NIP : notifier le bénéficiaire d'un reward ----------
 async function publishRewardNote(pubkey: string, amount: number, claimUrl: string, reason: string) {
   try {
     const note = finalizeEvent({
@@ -309,15 +306,12 @@ async function publishRewardNote(pubkey: string, amount: number, claimUrl: strin
   }
 }
 
-// ---------- Vidéo : provisionnement Cloudflare Stream (creds-gated) ----------
-// Si les creds CF sont présents -> crée un live input (ingest RTMPS pour OBS) + construit
-// l'URL HLS de lecture, et la pousse dans le tag `streaming` du NIP-53. Sinon STREAM.url reste
-// vide et la page /watch tombe sur un flux de démo. API: developers.cloudflare.com/stream/stream-live
+// --- Vidéo : provisionnement Cloudflare Stream ----------
 async function provisionCloudflareLive(): Promise<void> {
   const acct = process.env.CLOUDFLARE_STREAM_ACCOUNT_ID;
   const token = process.env.CLOUDFLARE_STREAM_API_TOKEN;
-  const code = process.env.CLOUDFLARE_STREAM_CUSTOMER_CODE; // sous-domaine customer-<CODE>
-  if (STREAM.url || !acct || !token) return; // déjà une URL, ou pas de creds -> on saute
+  const code = process.env.CLOUDFLARE_STREAM_CUSTOMER_CODE;
+  if (STREAM.url || !acct || !token) return;
   try {
     const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${acct}/stream/live_inputs`, {
       method: "POST",
@@ -333,26 +327,30 @@ async function provisionCloudflareLive(): Promise<void> {
       STREAM.url = `https://customer-${code}.cloudflarestream.com/${li.uid}/manifest/video.m3u8`;
       console.log(`        lecture HLS: ${STREAM.url}`);
     } else {
-      console.log(`        ⚠️ définis CLOUDFLARE_STREAM_CUSTOMER_CODE (ou STREAM_URL) pour l'URL de lecture`);
+      console.log(`        ⚠️ définis CLOUDFLARE_STREAM_CUSTOMER_CODE pour l'URL de lecture`);
     }
   } catch (e: any) {
     console.error("[video] provisionnement Cloudflare échoué:", e?.message ?? e);
   }
 }
 
-// ---------- détection temps réel (SDK) + dédup des tips identifiés ----------
-// Les VTXO claimés par facture (waitAndClaim) sont déjà comptés AVEC identité ; on les
-// dédupe ici par txid pour que la subscription ne les recompte pas en "anon".
+// --- détection temps réel + dédup des tips identifiés ----------
 const claimedTxids = new Set<string>();
+// B2 : mutex pour éviter la race condition entre settleAndZap et onIncomingFunds
+let incomingFundsLock = false;
 const sumValue = (coins: any[] = []) => coins.reduce((s, c) => s + Number(c?.value ?? c?.amount ?? 0), 0);
-
 let stopWatch: (() => void) | undefined;
+
 try {
   stopWatch = await rail.onIncomingFunds((funds: any) => {
+    if (incomingFundsLock) {
+      console.log("[arkade] incomingFunds ignoré (lock actif — settle en cours)");
+      return;
+    }
     if (Array.isArray(funds?.newVtxos)) {
       const fresh = funds.newVtxos.filter((v: any) => !claimedTxids.has(v.txid));
       for (const v of funds.newVtxos) claimedTxids.delete(v.txid);
-      const net = sumValue(fresh) - sumValue(funds.spentVtxos); // net > 0 = vrai entrant non identifié
+      const net = sumValue(fresh) - sumValue(funds.spentVtxos);
       if (net > 0) registerTip(net, { name: "anon", via: "vtxo" });
     } else if (Array.isArray(funds?.coins)) {
       const net = sumValue(funds.coins);
@@ -366,14 +364,14 @@ try {
 
 process.on("SIGINT", async () => {
   stopWatch?.();
-  await publishLive("ended").catch(() => {}); // marque le live terminé sur Nostr
+  await publishLive("ended").catch(() => {});
   pool.close(RELAYS);
   process.exit(0);
 });
 
-await provisionCloudflareLive(); // creds CF -> live input + URL HLS ; sinon /watch utilise un flux démo
+await provisionCloudflareLive();
 
-// ---------- HTTP ----------
+// --- HTTP ----------
 const handler = createHandler({
   rail,
   config: {
@@ -391,7 +389,7 @@ const handler = createHandler({
     actions: ACTIONS,
   },
   db,
-  state: { claimedTxids },
+  state: { claimedTxids, incomingFundsLock },
   helpers: {
     registerTip,
     publishZapReceipt,
@@ -401,22 +399,39 @@ const handler = createHandler({
   },
   fs: { publicDir: PUBLIC, portalDir: join(HERE, "..", "portal") },
 });
-
 const server = createServer(handler);
 
-// ---------- WS : 2 serveurs (noServer) routés par path sur l'upgrade ----------
-// /ws    -> flux de tips temps réel (overlay/watch/tip/dashboard)
-// /relay -> relay Nostr embarqué (NIP-01)
-// (un seul routeur d'upgrade : deux WSS `{server,path}` se court-circuiteraient.)
+// --- WS : 2 serveurs (noServer) routés par path ----------
 const wss = new WebSocketServer({ noServer: true });
+// B4 : heartbeat WS pour détecter les clients morts
+const HEARTBEAT_INTERVAL = 30000;
+const deadClients = new Set<WebSocket>();
+function heartbeat() { deadClients.clear(); }
+setInterval(() => {
+  for (const c of clients) {
+    if ((c as any).pumpstrAlive === false) {
+      deadClients.add(c);
+      try { c.terminate(); } catch {}
+    } else {
+      (c as any).pumpstrAlive = false;
+      try { c.ping(); } catch {}
+    }
+  }
+  for (const c of deadClients) clients.delete(c);
+}, HEARTBEAT_INTERVAL);
+
 wss.on("connection", (ws) => {
   clients.add(ws);
-  ws.send(JSON.stringify({ type: "hello", address: creatorAddress, npub: creatorNpub, recentTips: db.recentTips(), live: sig.isLive() }));
+  (ws as any).pumpstrAlive = true;
+  ws.on("pong", () => { (ws as any).pumpstrAlive = true; });
+  ws.send(JSON.stringify({ type: "hello", address: creatorAddress, npub: creatorNpub, recentTips: db.recentTips(), live: sig.isLive(), pot: livePot }));
   ws.on("message", (data: any) => { let m: any; try { m = JSON.parse(data.toString()); } catch { return; } sig.onMessage(ws as any, m); });
   ws.on("close", () => { clients.delete(ws); sig.detach(ws as any); });
 });
+
 const relayWss = new WebSocketServer({ noServer: true });
 relayWss.on("connection", (ws) => relay.onConnection(ws as any));
+
 function routeUpgrade(req: any, socket: any, head: any) {
   let pathname = "/";
   try { pathname = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`).pathname; } catch { /* */ }
@@ -434,16 +449,17 @@ server.listen(PORT, () => {
   console.log(`     portail fédéré       : http://localhost:${PORT}/portal`);
   console.log(`     relay Nostr embarqué : ws://localhost:${PORT}/relay  (NIP-01)`);
   console.log(`     lightning address    : ${lnAddress}\n`);
-  publishLive("live");                            // annonce le live sur Nostr (NIP-53)
-  setInterval(() => publishLive("live"), 45_000); // rafraîchit statut + nb de viewers
+  publishLive("live");
+  // B1 : vérifie sig.isLive() avant de republier
+  setInterval(() => { if (sig.isLive()) publishLive("live"); }, 45_000);
 });
 
-// ---------- HTTPS local (caméra/micro sur le tel via LAN) ----------
+// --- HTTPS local ----------
 const HTTPS_PORT = Number(process.env.HTTPS_PORT ?? PORT + 1);
 if (process.env.HTTPS !== "0" && ensureTlsCert()) {
   try {
     const httpsServer = createHttpsServer({ key: readFileSync(TLS_KEY), cert: readFileSync(TLS_CERT) }, handler);
-    httpsServer.on("upgrade", routeUpgrade); // mêmes WS (wss) que le http
+    httpsServer.on("upgrade", routeUpgrade);
     httpsServer.on("error", (e: any) => console.error("[tls] serveur HTTPS:", e?.message ?? e));
     httpsServer.listen(HTTPS_PORT, () => {
       const ip = localIps().find((x) => x.startsWith("192.168.")) ?? localIps().find((x) => x !== "127.0.0.1") ?? "localhost";

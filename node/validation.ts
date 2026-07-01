@@ -4,11 +4,10 @@
  */
 import { nip19 } from "nostr-tools";
 
-export const MAX_SATS = 100_000_000_000n; // 100 000 BTC = plafond raisonnable
+export const MAX_SATS = 100_000_000_000n;
 export const MIN_SATS = 1n;
-export const DUST_SATS = 330; // dust Arkade côté node
+export const DUST_SATS = 330;
 
-/** Normalise et valide un montant en sats. Retourne un bigint positif ou lance. */
 export function parseSats(value: unknown, opts: { min?: bigint; max?: bigint } = {}): bigint {
   const min = opts.min ?? MIN_SATS;
   const max = opts.max ?? MAX_SATS;
@@ -33,7 +32,6 @@ export function parseSats(value: unknown, opts: { min?: bigint; max?: bigint } =
   return b;
 }
 
-/** Accepte un npub (nip19) ou une pubkey x-only hex 64. Retourne la pubkey hex minuscule ou null. */
 export function parsePubkey(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const t = value.trim();
@@ -51,26 +49,27 @@ export function requirePubkey(value: unknown): string {
   return pk;
 }
 
-/** Tronque une chaîne utilisateur à une longueur maximale. */
 export function sanitizeString(value: unknown, maxLen: number, fallback = ""): string {
   if (typeof value !== "string") return fallback;
   return value.trim().slice(0, maxLen);
 }
 
-/** Valide un commentaire de tip (optionnel). */
 export function parseComment(value: unknown): string {
   return sanitizeString(value, 140);
 }
 
-/** Valide un nom d'affichage (optionnel). */
 export function parseName(value: unknown): string {
   const n = sanitizeString(value, 24, "anon");
   return n || "anon";
 }
 
-/** Valide un identifiant de LN address (alphanum + tirets, longueur raisonnable). */
 export function parseLnAddressUser(value: unknown): string {
   const s = sanitizeString(value, 32, "pay").toLowerCase();
   if (!/^[a-z0-9-_]+$/.test(s)) throw new Error("identifiant lightning address invalide");
   return s;
+}
+
+// H1 : helper d'échappement HTML (utilisé dans server.ts avant broadcast)
+export function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }

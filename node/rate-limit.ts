@@ -10,11 +10,8 @@
 type Bucket = { count: number; resetAt: number };
 
 export interface RateLimitOptions {
-  /** Nombre maximum de requêtes dans la fenêtre. */
   limit: number;
-  /** Fenêtre en millisecondes. */
   windowMs: number;
-  /** Clé optionnelle (par défaut : IP). */
   key?: string;
 }
 
@@ -23,15 +20,11 @@ export class RateLimiter {
 
   constructor(private defaultOpts: RateLimitOptions = { limit: 30, windowMs: 60_000 }) {}
 
-  /**
-   * Vérifie si une requête est limitée.
-   * @returns `{ limited: false }` si OK, sinon `{ limited: true, retryAfter }`.
-   */
   check(key: string, opts?: Partial<RateLimitOptions>): { limited: false } | { limited: true; retryAfter: number } {
     const { limit, windowMs } = { ...this.defaultOpts, ...opts };
     const now = Date.now();
 
-    // nettoyage paresseux : supprime les buckets expirés de temps en temps
+    // H2 : nettoyage paresseux mais aussi périodique
     if (this.buckets.size > 10_000) this.cleanup(now);
 
     const bucket = this.buckets.get(key);
@@ -48,21 +41,24 @@ export class RateLimiter {
     return { limited: false };
   }
 
-  /** Nettoie les buckets expirés. */
   cleanup(now = Date.now()) {
     for (const [k, b] of this.buckets) {
       if (b.resetAt <= now) this.buckets.delete(k);
     }
   }
 
-  /** Réinitialise tout (utile dans les tests). */
   reset() {
     this.buckets.clear();
   }
 }
 
-/** Construit une clé de rate-limit à partir d'une requête HTTP. */
-export function rateLimitKey(req: { socket?: { remoteAddress?: string }; headers?: Record<string, string | string[]> }, route: string): string {
+// H2 : nettoyage périodique global (toutes les 5 min)
+export function startRateLimitCleanup(rl: RateLimiter, intervalMs = 300_000): () => void {
+  const t = setInterval(() => rl.cleanup(), intervalMs);
+  return () => clearInterval(t);
+}
+
+export function rateLimitKey(req: { socket?: { remoteAddress?: string }; headers?: Record<string, string> }, route: string): string {
   const forwarded = req.headers?.["x-forwarded-for"];
   const ip = (typeof forwarded === "string" ? forwarded.split(",")[0].trim() : req.socket?.remoteAddress) ?? "unknown";
   return `${ip}:${route}`;
