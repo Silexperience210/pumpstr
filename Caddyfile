@@ -1,0 +1,12 @@
+# Caddyfile pour Pumpstr
+# Place ce fichier à la racine du repo et lance : docker compose -f docker-compose.prod.yml up -d caddy
+
+:80 {
+    reverse_proxy pumpstr-node:4242
+}
+
+# Décommente pour HTTPS avec domaine :
+# live.tondomaine.com {
+#     reverse_proxy pumpstr-node:4242
+#     tls ton@email.com
+# }
