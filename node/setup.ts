@@ -18,7 +18,7 @@ function detectExposure(): { mode: "local" | "tailscale" | "public"; ips: string
   const { networkInterfaces } = require("node:os");
   const ips: string[] = [];
   let tailscaleIp: string | undefined;
-  for (const nets of Object.values(networkInterfaces())) {
+  for (const nets of Object.values(networkInterfaces() ?? {})) {
     for (const n of nets ?? []) {
       if (n.family === "IPv4" && !n.internal) {
         ips.push(n.address);
