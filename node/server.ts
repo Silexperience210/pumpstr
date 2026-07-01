@@ -31,6 +31,7 @@ import { createHandler } from "./server-core.js";
 import { PumpstrDb, defaultDbPath } from "./db.js";
 import { createRelay } from "./relay.js";
 import { createSignaling } from "./signaling.js";
+import { createSetupHandler } from "./setup.js";
 
 // notifyIncomingFunds démarre aussi un watcher ON-CHAIN (Electrum WS) qui boucle en
 // reconnexion sur mutinynet (pas d'endpoint Electrum). Off-chain (VTXO via SSE) non affecté
@@ -141,6 +142,18 @@ let creatorAddress = "";
 // --- Persistance SQLite ----------
 const db = new PumpstrDb(defaultDbPath(HERE));
 console.log(`[db] persistance SQLite : ${defaultDbPath(HERE)}`);
+
+// --- Setup wizard (premier démarrage) ---
+const isSetupComplete = () => db.getConfig("setup_complete") === "1";
+const setupHandler = createSetupHandler({
+  db,
+  envPath: join(HERE, ".env"),
+  here: HERE,
+  onComplete: () => {
+    console.log("[setup] Configuration terminée. Redémarrage...");
+    process.exit(0); // Le conteneur/docker redémarrera le process
+  },
+});
 
 // --- Relay Nostr embarqué (NIP-01) ----------
 const relay = createRelay();
@@ -372,7 +385,7 @@ process.on("SIGINT", async () => {
 await provisionCloudflareLive();
 
 // --- HTTP ----------
-const handler = createHandler({
+const baseHandler = createHandler({
   rail,
   config: {
     port: PORT,
@@ -399,6 +412,26 @@ const handler = createHandler({
   },
   fs: { publicDir: PUBLIC, portalDir: join(HERE, "..", "portal") },
 });
+
+const handler = async (req: any, res: any) => {
+  const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
+  if (!isSetupComplete() && !url.pathname.startsWith("/api/setup") && url.pathname !== "/setup.html" && url.pathname !== "/") {
+    res.statusCode = 302;
+    res.setHeader("Location", "/setup.html");
+    return res.end();
+  }
+  if (!isSetupComplete() && url.pathname.startsWith("/api/setup")) {
+    return setupHandler(req, res);
+  }
+  if (!isSetupComplete() && url.pathname === "/setup.html") {
+    try {
+      const data = await readFile(join(PUBLIC, "setup.html"));
+      res.setHeader("content-type", "text/html; charset=utf-8");
+      return res.end(data);
+    } catch { res.statusCode = 404; return res.end("setup.html not found"); }
+  }
+  return baseHandler(req, res);
+};
 const server = createServer(handler);
 
 // --- WS : 2 serveurs (noServer) routés par path ----------
@@ -442,16 +475,26 @@ function routeUpgrade(req: any, socket: any, head: any) {
 server.on("upgrade", routeUpgrade);
 
 server.listen(PORT, () => {
-  console.log(`\n  🔥 PUMPSTR node en ligne :`);
-  console.log(`     console créateur     : http://localhost:${PORT}/dashboard.html`);
-  console.log(`     overlay (source OBS) : http://localhost:${PORT}/overlay.html`);
-  console.log(`     page tip (viewer)    : http://localhost:${PORT}/tip.html`);
-  console.log(`     portail fédéré       : http://localhost:${PORT}/portal`);
-  console.log(`     relay Nostr embarqué : ws://localhost:${PORT}/relay  (NIP-01)`);
-  console.log(`     lightning address    : ${lnAddress}\n`);
-  publishLive("live");
-  // B1 : vérifie sig.isLive() avant de republier
-  setInterval(() => { if (sig.isLive()) publishLive("live"); }, 45_000);
+  if (!isSetupComplete()) {
+    console.log(`
+  🆕 PUMPSTR — Configuration requise`);
+    console.log(`     Ouvrez : http://localhost:${PORT}/setup.html`);
+    console.log(`     Wizard de première configuration
+`);
+  } else {
+    console.log(`
+  🔥 PUMPSTR node en ligne :`);
+    console.log(`     console créateur     : http://localhost:${PORT}/dashboard.html`);
+    console.log(`     overlay (source OBS) : http://localhost:${PORT}/overlay.html`);
+    console.log(`     page tip (viewer)    : http://localhost:${PORT}/tip.html`);
+    console.log(`     portail fédéré       : http://localhost:${PORT}/portal`);
+    console.log(`     relay Nostr embarqué : ws://localhost:${PORT}/relay  (NIP-01)`);
+    console.log(`     lightning address    : ${lnAddress}
+`);
+    publishLive("live");
+    // B1 : vérifie sig.isLive() avant de republier
+    setInterval(() => { if (sig.isLive()) publishLive("live"); }, 45_000);
+  }
 });
 
 // --- HTTPS local ----------
@@ -465,7 +508,8 @@ if (process.env.HTTPS !== "0" && ensureTlsCert()) {
       const ip = localIps().find((x) => x.startsWith("192.168.")) ?? localIps().find((x) => x !== "127.0.0.1") ?? "localhost";
       console.log(`  🔒 HTTPS (cam/micro, cert auto-signé) :`);
       console.log(`     Studio sur le tel    : https://${ip}:${HTTPS_PORT}/studio.html  (accepte l'alerte de sécurité 1×)`);
-      console.log(`     console / overlay…   : https://${ip}:${HTTPS_PORT}/dashboard.html\n`);
+      console.log(`     console / overlay…   : https://${ip}:${HTTPS_PORT}/dashboard.html
+`);
     });
   } catch (e: any) { console.error("[tls] HTTPS non démarré:", e?.message ?? e); }
 }
