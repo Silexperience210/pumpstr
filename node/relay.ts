@@ -20,7 +20,7 @@ export interface NostrEvent {
 }
 export interface Filter {
   ids?: string[]; authors?: string[]; kinds?: number[]; since?: number; until?: number; limit?: number;
-  [tag: string]: string[] | undefined;
+  [tag: string]: any;
 }
 
 export function replaceableKey(ev: NostrEvent): string | null {
