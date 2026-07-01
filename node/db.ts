@@ -8,6 +8,7 @@
  * - tips : tips reçus (temps réel + simulate)
  * - rewards : escrow réclamables créés par le créateur
  * - live_state : persistance de la cagnotte du live courant (M4)
+ * - config : configuration du setup wizard
  */
 import Database from "better-sqlite3";
 import { join } from "node:path";
@@ -41,7 +42,6 @@ export class PumpstrDb {
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
     this.migrate();
-    // H7 : checkpoint WAL périodique (toutes les 10 min via setInterval externe)
   }
 
   private migrate() {
@@ -75,7 +75,21 @@ export class PumpstrDb {
         key TEXT PRIMARY KEY,
         value INTEGER NOT NULL DEFAULT 0
       );
+
+      CREATE TABLE IF NOT EXISTS config (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      );
     `);
+  }
+
+  // --- Configuration (setup wizard) ---
+  getConfig(key: string): string | undefined {
+    const row = this.db.prepare("SELECT value FROM config WHERE key = ?").get(key) as { value: string } | undefined;
+    return row?.value;
+  }
+  setConfig(key: string, value: string) {
+    this.db.prepare("INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
   }
 
   // M4 : persistance de la cagnotte du live
