@@ -1,0 +1,52 @@
+version: "3.8"
+
+services:
+  pumpstr-node:
+    build:
+      context: ./node
+      dockerfile: Dockerfile
+    container_name: pumpstr-node
+    restart: unless-stopped
+    ports:
+      - "4242:4242"
+      - "4243:4243"
+    env_file:
+      - .env
+    volumes:
+      - pumpstr-data:/app/data
+      - pumpstr-tls:/app/.tls
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4242/api/creator"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - pumpstr-net
+
+  # Optionnel : reverse proxy avec Caddy pour HTTPS auto
+  caddy:
+    image: caddy:2-alpine
+    container_name: pumpstr-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - pumpstr-net
+    depends_on:
+      - pumpstr-node
+
+volumes:
+  pumpstr-data:
+  pumpstr-tls:
+  caddy-data:
+  caddy-config:
+
+networks:
+  pumpstr-net:
+    driver: bridge
